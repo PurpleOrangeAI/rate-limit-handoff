@@ -1,0 +1,77 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "rate-limit-handoff"
+version = "0.1.0"
+description = "Turn AI rate limits into high-quality checkpoints. Schedule work across Claude Code, Codex, Grok Build, Antigravity & more. Auto-update your Second Brain + handoff.md."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [
+    { name = "Purple Orange AI", email = "purpleorangeai@example.com" },
+]
+keywords = [
+    "ai", "claude", "codex", "rate-limit", "handoff", "second-brain",
+    "claude-code", "cursor", "antigravity", "grok", "scheduler", "productivity"
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Utilities",
+]
+dependencies = []
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.4",
+    "mypy>=1.8",
+]
+
+[project.urls]
+Homepage = "https://github.com/PurpleOrangeAI/rate-limit-handoff"
+Repository = "https://github.com/PurpleOrangeAI/rate-limit-handoff"
+Issues = "https://github.com/PurpleOrangeAI/rate-limit-handoff/issues"
+Documentation = "https://github.com/PurpleOrangeAI/rate-limit-handoff#readme"
+
+[project.scripts]
+rate-limit-handoff = "rate_limit_handoff.cli:main"
+rlh = "rate_limit_handoff.cli:main"
+limit-handoff = "rate_limit_handoff.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rate_limit_handoff"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/templates",
+    "/docs",
+    "/examples",
+    "/README.md",
+    "/LICENSE",
+    "/CHANGELOG.md",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = true
+warn_return_any = true
