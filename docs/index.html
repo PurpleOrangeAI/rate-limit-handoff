@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>rate-limit-handoff — Preserve AI Work Across Usage Windows</title>
+  <meta name="description" content="An open-source continuity layer for Claude Code, Codex, Cursor, Grok, and Antigravity. Turn AI rate limits into clean, resumable checkpoints.">
+  <meta name="robots" content="index,follow,max-image-preview:large">
+  <link rel="canonical" href="https://purpleorangeai.github.io/rate-limit-handoff/">
+  <meta name="theme-color" content="#09090b">
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="rate-limit-handoff — Turn AI Rate Limits into Checkpoints">
+  <meta property="og:description" content="Preserve the next action, critical context, and verification state across Claude Code, Codex, Cursor, Grok, and Antigravity sessions.">
+  <meta property="og:url" content="https://purpleorangeai.github.io/rate-limit-handoff/">
+  <meta property="og:image" content="https://purpleorangeai.github.io/rate-limit-handoff/assets/social-preview.jpg">
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:image" content="https://purpleorangeai.github.io/rate-limit-handoff/assets/social-preview.jpg">
+  <link rel="icon" type="image/png" href="assets/purple-orange-ai-logo.png">
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "SoftwareSourceCode",
+    "name": "rate-limit-handoff",
+    "description": "An open-source Python continuity tool that turns AI coding assistant rate limits into resumable checkpoints.",
+    "codeRepository": "https://github.com/PurpleOrangeAI/rate-limit-handoff",
+    "url": "https://purpleorangeai.github.io/rate-limit-handoff/",
+    "version": "0.1.0",
+    "programmingLanguage": "Python",
+    "runtimePlatform": "Python 3.10 or later",
+    "license": "https://github.com/PurpleOrangeAI/rate-limit-handoff/blob/main/LICENSE",
+    "creator": {
+      "@type": "Organization",
+      "name": "Purple Orange AI",
+      "url": "https://purpleorange.ai/"
+    },
+    "keywords": "Claude Code rate limit, Codex rate limit, AI session handoff, agent continuity, handoff.md, Second Brain"
+  }
+  </script>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #09090b;
+      --surface: #111114;
+      --surface-2: #18181b;
+      --text: #fafafa;
+      --muted: #a1a1aa;
+      --faint: #71717a;
+      --line: rgba(255,255,255,0.12);
+      --purple: #a78bfa;
+      --purple-strong: #7c3aed;
+      --orange: #fb923c;
+      --orange-strong: #f97316;
+      --max: 1160px;
+    }
+    *, *::before, *::after { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      overflow-x: hidden;
+      background: var(--bg);
+      color: var(--text);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      -webkit-font-smoothing: antialiased;
+    }
+    a { color: inherit; }
+    button, input { font: inherit; }
+    .skip-link {
+      position: fixed;
+      left: 16px;
+      top: -80px;
+      z-index: 100;
+      padding: 10px 14px;
+      border-radius: 6px;
+      background: #fff;
+      color: #000;
+    }
+    .skip-link:focus { top: 16px; }
+    .wrap { width: min(calc(100% - 40px), var(--max)); margin: 0 auto; }
+    .site-header {
+      position: absolute;
+      inset: 0 0 auto;
+      z-index: 10;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+      background: rgba(9,9,11,0.42);
+      backdrop-filter: blur(12px);
+    }
+    .nav {
+      min-height: 72px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+    }
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 11px;
+      text-decoration: none;
+      font-weight: 760;
+    }
+    .brand img { width: 34px; height: 34px; border-radius: 7px; object-fit: cover; }
+    .brand span { color: var(--muted); font-weight: 500; }
+    .nav-links { display: flex; align-items: center; gap: 24px; }
+    .nav-links a {
+      color: #d4d4d8;
+      font-size: 14px;
+      text-decoration: none;
+    }
+    .nav-links a:hover { color: #fff; }
+    .hero {
+      position: relative;
+      min-height: min(82svh, 860px);
+      display: flex;
+      align-items: flex-end;
+      isolation: isolate;
+      overflow: hidden;
+      background: #0b0910;
+    }
+    .hero-media {
+      position: absolute;
+      inset: -4%;
+      z-index: -3;
+      width: 108%;
+      height: 108%;
+      object-fit: cover;
+      object-position: center 46%;
+      filter: saturate(0.92) contrast(1.04);
+      animation: hero-breathe 18s ease-in-out infinite alternate;
+    }
+    .hero::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      z-index: -2;
+      background: linear-gradient(90deg, rgba(9,9,11,0.96) 0%, rgba(9,9,11,0.76) 42%, rgba(9,9,11,0.18) 76%),
+                  linear-gradient(0deg, #09090b 0%, transparent 38%);
+    }
+    .hero-content { width: min(calc(100% - 40px), var(--max)); margin: 0 auto; padding: 150px 0 82px; }
+    .eyebrow {
+      margin: 0 0 18px;
+      color: var(--purple);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+    }
+    h1, h2, h3, p { letter-spacing: 0; }
+    h1 {
+      max-width: 800px;
+      margin: 0 0 20px;
+      font-size: 76px;
+      line-height: 1.02;
+      font-weight: 820;
+      overflow-wrap: anywhere;
+    }
+    .hero-copy {
+      max-width: 670px;
+      margin: 0 0 30px;
+      color: #d4d4d8;
+      font-size: 20px;
+      line-height: 1.65;
+    }
+    .hero-actions { display: flex; flex-wrap: wrap; gap: 12px; }
+    .button {
+      min-height: 48px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 19px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: rgba(255,255,255,0.07);
+      color: #fff;
+      font-weight: 720;
+      text-decoration: none;
+    }
+    .button.primary { border-color: transparent; background: linear-gradient(110deg, var(--purple-strong), var(--orange-strong)); }
+    .button:hover { border-color: rgba(255,255,255,0.3); filter: brightness(1.08); }
+    .tool-line {
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      background: #0d0d10;
+    }
+    .tool-line .wrap {
+      min-height: 72px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .tool-list { color: #e4e4e7; }
+    .section { padding: 104px 0; }
+    .section.muted { background: #0d0d10; }
+    .section-head {
+      display: grid;
+      grid-template-columns: 0.72fr 1fr;
+      gap: 70px;
+      align-items: start;
+      margin-bottom: 64px;
+    }
+    .kicker { margin: 0; color: var(--orange); font-size: 13px; font-weight: 800; text-transform: uppercase; }
+    h2 { margin: 0; font-size: 46px; line-height: 1.12; }
+    .section-head p { margin: 0; color: var(--muted); font-size: 18px; line-height: 1.72; }
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      border-top: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+    }
+    .step { min-height: 230px; padding: 34px 32px 36px 0; }
+    .step + .step { border-left: 1px solid var(--line); padding-left: 32px; }
+    .step-number { display: block; margin-bottom: 24px; color: var(--purple); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+    .step h3 { margin: 0 0 12px; font-size: 24px; }
+    .step p { margin: 0; color: var(--muted); line-height: 1.65; }
+    .install-grid {
+      display: grid;
+      grid-template-columns: 0.9fr 1.1fr;
+      gap: 72px;
+      align-items: center;
+    }
+    .install-grid h2 { margin-bottom: 18px; }
+    .install-grid > div > p { color: var(--muted); font-size: 18px; line-height: 1.7; }
+    .terminal {
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #08080a;
+      box-shadow: 0 28px 80px rgba(0,0,0,0.32);
+    }
+    .terminal-bar {
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 0 12px 0 16px;
+      border-bottom: 1px solid var(--line);
+      color: var(--faint);
+      font-size: 12px;
+    }
+    .copy-button {
+      min-width: 64px;
+      min-height: 30px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #18181b;
+      color: #d4d4d8;
+      cursor: pointer;
+    }
+    .copy-button:hover { color: #fff; border-color: rgba(255,255,255,0.3); }
+    pre { margin: 0; padding: 26px; overflow-x: auto; color: #f4f4f5; font-size: 14px; line-height: 1.8; }
+    code { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+    .accent { color: var(--orange); }
+    .newsletter {
+      padding: 88px 0 76px;
+      border-top: 1px solid var(--line);
+      background: #09090b;
+    }
+    .newsletter-frame { display: block; width: 100%; min-height: 330px; border: 0; background: #09090b; }
+    footer { border-top: 1px solid var(--line); padding: 28px 0; color: var(--faint); font-size: 13px; }
+    .footer-inner { display: flex; align-items: center; justify-content: space-between; gap: 24px; }
+    .footer-inner a { color: var(--muted); text-decoration: none; }
+    .footer-links { display: flex; gap: 18px; }
+    :focus-visible { outline: 2px solid var(--orange); outline-offset: 3px; }
+    @keyframes hero-breathe { from { transform: scale(1); } to { transform: scale(1.035); } }
+    @media (max-width: 820px) {
+      h1 { font-size: 54px; }
+      .section-head, .install-grid { grid-template-columns: 1fr; gap: 28px; }
+      .steps { grid-template-columns: 1fr; }
+      .step { min-height: auto; padding: 28px 0; }
+      .step + .step { border-left: 0; border-top: 1px solid var(--line); padding-left: 0; }
+      .hero::before { background: linear-gradient(90deg, rgba(9,9,11,0.94), rgba(9,9,11,0.45)), linear-gradient(0deg, #09090b, transparent 42%); }
+    }
+    @media (max-width: 600px) {
+      .wrap, .hero-content { width: min(calc(100% - 32px), var(--max)); }
+      .site-header { position: absolute; }
+      .nav { min-height: 66px; }
+      .brand span { display: none; }
+      .nav-links { gap: 14px; }
+      .nav-links a { font-size: 13px; }
+      .nav-links a:not(:last-child) { display: none; }
+      .hero { min-height: 78svh; }
+      .hero-media { object-position: 51% center; opacity: 0.72; }
+      .hero-content { padding: 130px 0 56px; }
+      h1 { font-size: 42px; }
+      .hero-copy { font-size: 17px; }
+      .button { flex: 1 1 160px; }
+      .tool-line .wrap { min-height: 92px; align-items: flex-start; flex-direction: column; justify-content: center; gap: 7px; }
+      .section { padding: 76px 0; }
+      h2 { font-size: 36px; }
+      .section-head { margin-bottom: 42px; }
+      .terminal-bar { align-items: center; }
+      pre { padding: 20px; font-size: 12px; }
+      .newsletter { padding-top: 70px; }
+      .newsletter-frame { min-height: 410px; }
+      .footer-inner { align-items: flex-start; flex-direction: column; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      html { scroll-behavior: auto; }
+      .hero-media { animation: none; }
+    }
+  </style>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header">
+    <div class="wrap nav">
+      <a class="brand" href="https://purpleorange.ai/" aria-label="Purple Orange AI home">
+        <img src="assets/purple-orange-ai-logo.png" alt="">
+        Purple Orange AI <span>/ Open Source</span>
+      </a>
+      <nav class="nav-links" aria-label="Primary">
+        <a href="#how">How it works</a>
+        <a href="#install">Install</a>
+        <a href="https://github.com/PurpleOrangeAI/rate-limit-handoff">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="hero" aria-labelledby="hero-title">
+      <img class="hero-media" src="assets/social-preview.jpg" alt="" aria-hidden="true">
+      <div class="hero-content">
+        <p class="eyebrow">Open-source continuity for serious AI work</p>
+        <h1 id="hero-title">rate-limit-handoff</h1>
+        <p class="hero-copy">Turn usage limits into clean checkpoints. Preserve the next action, critical context, and verification state across Claude Code, Codex, Cursor, Grok, and Antigravity.</p>
+        <div class="hero-actions">
+          <a class="button primary" href="https://github.com/PurpleOrangeAI/rate-limit-handoff">View on GitHub</a>
+          <a class="button" href="#install">Install from source</a>
+        </div>
+      </div>
+    </section>
+
+    <div class="tool-line" aria-label="Supported tools">
+      <div class="wrap">
+        <strong>One living handoff.</strong>
+        <span class="tool-list">Claude Code / OpenAI Codex / Cursor / Grok Build / Antigravity / Hermes</span>
+      </div>
+    </div>
+
+    <section class="section" id="how">
+      <div class="wrap">
+        <div class="section-head">
+          <p class="kicker">The checkpoint model</p>
+          <div>
+            <h2>Keep the operating state, not just the transcript.</h2>
+            <p>Rate limits are unavoidable. Lost context is not. rate-limit-handoff captures what the next capable session needs to continue without rediscovering the work.</p>
+          </div>
+        </div>
+        <div class="steps">
+          <article class="step">
+            <span class="step-number">01 / DECIDE</span>
+            <h3>Choose deliberately</h3>
+            <p>Continue on an approved lighter model or schedule the remaining work for the next full-capacity window.</p>
+          </article>
+          <article class="step">
+            <span class="step-number">02 / WRITE</span>
+            <h3>Snapshot the state</h3>
+            <p>Record the exact next action, decisions, constraints, changed files, test evidence, and unresolved risks.</p>
+          </article>
+          <article class="step">
+            <span class="step-number">03 / RESUME</span>
+            <h3>Return with full context</h3>
+            <p>Open the living <code>handoff.md</code>, confirm the workspace state, and continue from the named next move.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section class="section muted" id="install">
+      <div class="wrap install-grid">
+        <div>
+          <p class="kicker">Public beta / MIT</p>
+          <h2>Pure Python. No cloud account. No telemetry.</h2>
+          <p>Install directly from GitHub, initialize a workspace, and keep the handoff with the project. Python 3.10 or later.</p>
+          <a class="button" href="https://github.com/PurpleOrangeAI/rate-limit-handoff#readme">Read the documentation</a>
+        </div>
+        <div class="terminal" aria-label="Installation command">
+          <div class="terminal-bar">
+            <span>terminal</span>
+            <button class="copy-button" type="button" data-copy="pip install git+https://github.com/PurpleOrangeAI/rate-limit-handoff.git&#10;rate-limit-handoff --init">Copy</button>
+          </div>
+          <pre><code><span class="accent">$</span> pip install git+https://github.com/PurpleOrangeAI/rate-limit-handoff.git
+<span class="accent">$</span> rate-limit-handoff --init
+
+<span class="accent">$</span> rate-limit-handoff --schedule \
+    --reset-at "04:00" \
+    --model codex \
+    --summary "Resume from the verified checkpoint"</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <section class="newsletter" id="newsletter">
+      <div class="wrap">
+        <iframe
+          class="newsletter-frame"
+          id="newsletter-frame"
+          src="https://purpleorange.ai/newsletter/embed/"
+          title="Subscribe to the Purple Orange AI Weekly Dispatch"
+          loading="lazy"
+          scrolling="no"></iframe>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap footer-inner">
+      <span>Built by Purple Orange AI. MIT licensed.</span>
+      <div class="footer-links">
+        <a href="https://purpleorange.ai/">Purple Orange AI</a>
+        <a href="https://github.com/PurpleOrangeAI/rate-limit-handoff">Repository</a>
+        <a href="https://github.com/PurpleOrangeAI/rate-limit-handoff/issues">Issues</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    (function () {
+      var copyButton = document.querySelector('[data-copy]');
+      copyButton.addEventListener('click', async function () {
+        try {
+          await navigator.clipboard.writeText(copyButton.dataset.copy);
+          copyButton.textContent = 'Copied';
+          window.setTimeout(function () { copyButton.textContent = 'Copy'; }, 1800);
+        } catch (error) {
+          copyButton.textContent = 'Select';
+        }
+      });
+
+      window.addEventListener('message', function (event) {
+        if (event.origin !== 'https://purpleorange.ai') return;
+        if (!event.data || event.data.type !== 'purple-orange-newsletter-height') return;
+        var frame = document.getElementById('newsletter-frame');
+        var height = Number(event.data.height);
+        if (Number.isFinite(height) && height >= 240 && height <= 700) {
+          frame.style.height = height + 'px';
+        }
+      });
+    }());
+  </script>
+</body>
+</html>
