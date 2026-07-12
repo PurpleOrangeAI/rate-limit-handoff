@@ -37,11 +37,21 @@ Examples:
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
 
     # Commands (mutually exclusive group would be nicer but keep simple flags for UX)
-    parser.add_argument("--schedule", action="store_true", help="Schedule remaining work for reset time")
-    parser.add_argument("--resume", action="store_true", help="Show resume instructions from handoff.md")
-    parser.add_argument("--status", action="store_true", help="Show time, next reset, and model info")
-    parser.add_argument("--update-only", action="store_true", help="Just update handoff + Second Brain")
-    parser.add_argument("--codex-status", action="store_true", help="Best-effort local Codex usage hints")
+    parser.add_argument(
+        "--schedule", action="store_true", help="Schedule remaining work for reset time"
+    )
+    parser.add_argument(
+        "--resume", action="store_true", help="Show resume instructions from handoff.md"
+    )
+    parser.add_argument(
+        "--status", action="store_true", help="Show time, next reset, and model info"
+    )
+    parser.add_argument(
+        "--update-only", action="store_true", help="Just update handoff + Second Brain"
+    )
+    parser.add_argument(
+        "--codex-status", action="store_true", help="Best-effort local Codex usage hints"
+    )
     parser.add_argument(
         "--parse-usage",
         type=str,
@@ -77,7 +87,19 @@ Examples:
         "--workspace",
         type=str,
         default=None,
-        help="Workspace root (default: current directory). Should contain or become home of handoff.md",
+        help=(
+            "Workspace root (default: current directory). Should contain or become home "
+            "of handoff.md"
+        ),
+    )
+    parser.add_argument(
+        "--second-brain-root",
+        type=str,
+        default=None,
+        help=(
+            "Optional Second Brain root. Existing 00 Inbox + 10 Projects directories "
+            "are detected as an Obsidian vault layout"
+        ),
     )
     return parser
 
@@ -87,7 +109,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     workspace = Path(args.workspace).resolve() if args.workspace else Path.cwd()
-    sched = LimitScheduler(workspace=workspace)
+    second_brain_root = Path(args.second_brain_root).resolve() if args.second_brain_root else None
+    sched = LimitScheduler(workspace=workspace, second_brain_root=second_brain_root)
 
     if args.init:
         return cmd_init(sched)
@@ -121,7 +144,7 @@ def main(argv: list[str] | None = None) -> int:
         if not text.strip() and not sys.stdin.isatty():
             text = sys.stdin.read()
         if not text.strip():
-            print("Provide text via --parse-usage \"...\" or pipe it.")
+            print('Provide text via --parse-usage "..." or pipe it.')
             return 1
         parsed = sched.parse_usage_text(text)
         print("Parsed usage:")
@@ -138,7 +161,7 @@ def main(argv: list[str] | None = None) -> int:
     # No command → help
     parser.print_help()
     print("\nQuick start:")
-    print('  rate-limit-handoff --init')
+    print("  rate-limit-handoff --init")
     print('  rate-limit-handoff --schedule --reset-at "04:00" --model codex --summary "Your task"')
     print("  rate-limit-handoff --resume")
     return 0
@@ -146,8 +169,6 @@ def main(argv: list[str] | None = None) -> int:
 
 def cmd_init(sched: LimitScheduler) -> int:
     """Bootstrap a ready-to-use workspace."""
-    from importlib import resources
-    import shutil
 
     print(f"Initializing rate-limit-handoff workspace in: {sched.workspace}")
 
@@ -187,7 +208,8 @@ def textwrap_starter_handoff() -> str:
     return """# Session Handoff Document
 **Last Updated:** (auto)
 **Current Session Context:** (fill me)
-**Preferred Action on Limit Approaching:** Schedule continuation instead of falling back to weaker model
+**Preferred Action on Limit Approaching:** Schedule continuation instead of falling back
+to a weaker model
 
 ---
 
@@ -227,7 +249,8 @@ rate-limit-handoff --resume
 
 **Status:** Active  
 **Owner:** (you)  
-**Sync note:** Keep this file in the root of your Second Brain / project so it syncs across machines.
+**Sync note:** Keep this file in the root of your Second Brain / project so it syncs
+across machines.
 """
 
 
@@ -257,7 +280,7 @@ automatically compounds knowledge.
 
 
 def _codex_skill() -> str:
-    return '''# Codex Skill: Rate-Limit Aware Handoff
+    return """# Codex Skill: Rate-Limit Aware Handoff
 
 **Name:** rate-limit-handoff  
 **For:** OpenAI Codex (CLI, app, or VS Code extension)  
@@ -289,7 +312,8 @@ def _codex_skill() -> str:
        --reset-at "HH:MM" \\
        --summary "<one precise sentence of remaining work + key files + acceptance criteria>"
      ```
-   - Confirm: "Handoff + Second Brain updated. Resume after reset with `rate-limit-handoff --resume` or just open handoff.md."
+   - Confirm: "Handoff + Second Brain updated. Resume after reset with
+     `rate-limit-handoff --resume` or just open handoff.md."
    - Do **not** continue heavy work on a degraded model unless the user explicitly overrides.
 
 4. At the **start of every new Codex session** after a known reset:
@@ -304,12 +328,14 @@ def _codex_skill() -> str:
 - Local sessions often under `~/.codex/sessions`.
 
 ## Why this skill exists
-Codex burns the 5h window quickly on reasoning-heavy agent work. Scheduling preserves quality and compounds knowledge in the Second Brain instead of forcing a mediocre continuation.
-'''
+Codex burns the 5h window quickly on reasoning-heavy agent work. Scheduling preserves
+quality and compounds knowledge in the Second Brain instead of forcing a mediocre
+continuation.
+"""
 
 
 def _grok_skill() -> str:
-    return '''# Grok Build Rule / Skill: Rate-Limit Aware Handoff
+    return """# Grok Build Rule / Skill: Rate-Limit Aware Handoff
 
 **Name:** rate-limit-handoff  
 **For:** Grok Build CLI / xAI Grok Build surfaces + Hermes  
@@ -320,7 +346,8 @@ def _grok_skill() -> str:
 You are operating inside a multi-tool workflow that also uses Claude Code, Codex, and Antigravity.  
 A living file `handoff.md` (and the Second Brain) is the single source of truth for continuity.
 
-**Whenever remaining capacity looks low** (usage % high, SuperGrok weekly quota low, API 429s, or user mentions limit / schedule / handoff):
+**Whenever remaining capacity looks low** (usage % high, SuperGrok weekly quota low,
+API 429s, or user mentions limit / schedule / handoff):
 
 1. Pause heavy generation.
 2. Offer:
@@ -339,23 +366,27 @@ A living file `handoff.md` (and the Second Brain) is the single source of truth 
    ```
    Confirm the handoff was written, then stop.
 
-4. On new session start: always check `handoff.md` first and continue from the Pending section if present.
+4. On new session start: always check `handoff.md` first and continue from the Pending
+   section if present.
 
 ## Notes for Hermes integration
-- When Hermes surfaces xAI rate-limit headers or SuperGrok quota warnings, treat them as low-capacity signals and offer the schedule path.
+- When Hermes surfaces xAI rate-limit headers or SuperGrok quota warnings, treat them
+  as low-capacity signals and offer the schedule path.
 - Prefer quality continuity over finishing on a degraded model.
-'''
+"""
 
 
 def _agy_skill() -> str:
-    return '''# Antigravity (agy CLI) Skill: Rate-Limit Aware Handoff
+    return """# Antigravity (agy CLI) Skill: Rate-Limit Aware Handoff
 
 **Name:** rate-limit-handoff  
 **For:** Google Antigravity / agy CLI  
 **Version:** 0.1.0  
 
 ## Why this is critical for Antigravity
-agy has extremely high token overhead from system prompts + tools. Quotas (5h refresh + weekly) can disappear in 1–2 hours of real work. Silent degradation or account switching mid-project is painful. Prefer an explicit schedule + handoff.
+agy has extremely high token overhead from system prompts + tools. Quotas (5h refresh
++ weekly) can disappear in 1–2 hours of real work. Silent degradation or account
+switching mid-project is painful. Prefer an explicit schedule + handoff.
 
 ## Behavior
 
@@ -369,7 +400,8 @@ agy has extremely high token overhead from system prompts + tools. Quotas (5h re
    > Antigravity quota is low / about to hit the 5h wall.  
    > **A)** Continue on a lighter Gemini model or switch tools now.  
    > **B)** (strongly recommended) Schedule the exact remaining work for after the reset.  
-   >   I will write everything into `handoff.md` + Second Brain so you can resume cleanly in agy, Claude Code, Codex, or Grok.  
+   >   I will write everything into `handoff.md` + Second Brain so you can resume
+   >   cleanly in agy, Claude Code, Codex, or Grok.
    > Choose B?
 
 3. On B:
@@ -380,12 +412,13 @@ agy has extremely high token overhead from system prompts + tools. Quotas (5h re
    ```
    Confirm and stop. Do not keep burning the remaining quota on low-value loops.
 
-4. Session start rule: if `handoff.md` exists, read it and surface Pending work before doing anything else.
-'''
+4. Session start rule: if `handoff.md` exists, read it and surface Pending work before
+   doing anything else.
+"""
 
 
 def _general_skill() -> str:
-    return '''# General Auto-Detect Limits Skill (any frontend)
+    return """# General Auto-Detect Limits Skill (any frontend)
 
 **Name:** auto-detect-rate-limits  
 **Version:** 0.1.0  
@@ -396,8 +429,10 @@ def _general_skill() -> str:
 Trigger the schedule offer when **any** of these are true:
 
 - Remaining capacity estimates < 15–20% of current window
-- Explicit user language: "almost out", "hitting limit", "2 hours left", "schedule for later", "handoff", "don't want to drop to 5.4"
-- Tool/UI messages containing: "rate limit", "usage limit", "quota reached", "resets in", "5h limit", "weekly limit"
+- Explicit user language: "almost out", "hitting limit", "2 hours left",
+  "schedule for later", "handoff", "don't want to drop to 5.4"
+- Tool/UI messages containing: "rate limit", "usage limit", "quota reached",
+  "resets in", "5h limit", "weekly limit"
 - For Codex: after seeing `/status` with low %
 - For Antigravity: after `/context` or "Resets in XhYmZs"
 - For API/Hermes: 429 responses or remaining-token headers approaching zero
@@ -430,11 +465,13 @@ Then confirm and **stop heavy work**.
 
 ## Session start rule (all tools)
 
-If `handoff.md` exists in the workspace or Second Brain root → read it first and continue from Pending / Next Exact Action. Prefer full-power model after reset.
+If `handoff.md` exists in the workspace or Second Brain root → read it first and
+continue from Pending / Next Exact Action. Prefer full-power model after reset.
 
 ## Why
-Rate limits become high-quality forced checkpoints instead of quality-destroying interruptions. Knowledge compounds in the Second Brain every time you schedule.
-'''
+Rate limits become high-quality forced checkpoints instead of quality-destroying
+interruptions. Knowledge compounds in the Second Brain every time you schedule.
+"""
 
 
 if __name__ == "__main__":

@@ -5,18 +5,13 @@
 </p>
 
 <p align="center">
-  <strong>Turn rate limits into high-quality checkpoints</strong><br>
-  Schedule remaining work across Claude Code • Codex • Grok Build • Antigravity • Cursor
-</p>
-
-<p align="center">
   <strong>Turn AI rate limits into high-quality checkpoints.</strong><br>
   Schedule remaining work across Claude Code • Codex • Grok Build • Antigravity • Cursor • Hermes.<br>
   Auto-update your Second Brain + living <code>handoff.md</code> so context never evaporates.
 </p>
 
 <p align="center">
-  <a href="https://pypi.org/project/rate-limit-handoff/"><img src="https://img.shields.io/pypi/v/rate-limit-handoff.svg" alt="PyPI"></a>
+  <img src="https://img.shields.io/badge/PyPI-pending-lightgrey.svg" alt="PyPI pending">
   <a href="https://github.com/PurpleOrangeAI/rate-limit-handoff/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT"></a>
   <a href="https://github.com/PurpleOrangeAI/rate-limit-handoff"><img src="https://img.shields.io/badge/python-3.10%2B-blue.svg" alt="Python"></a>
   <img src="https://img.shields.io/badge/status-beta-yellow.svg" alt="Status">
@@ -59,10 +54,10 @@ Rate limits stop being interruptions and become **forced high-quality checkpoint
 ## Quick Start
 
 ```bash
-# Install (recommended)
-pip install rate-limit-handoff
+# Install from GitHub while the first PyPI release is pending
+pip install git+https://github.com/PurpleOrangeAI/rate-limit-handoff.git
 
-# Or from source
+# Or install from source for development
 git clone https://github.com/PurpleOrangeAI/rate-limit-handoff.git
 cd rate-limit-handoff
 pip install -e .
@@ -77,6 +72,19 @@ rate-limit-handoff --init
 This creates:
 - `handoff.md` (living session state)
 - `second_brain/` skeleton with skills + project notes
+
+To write checkpoint notes into an existing Obsidian vault while keeping `handoff.md`
+in the project root:
+
+```bash
+rate-limit-handoff --workspace /path/to/project \
+  --second-brain-root /path/to/MySecondBrain \
+  --init
+```
+
+When the supplied root already contains `00 Inbox/` and `10 Projects/`, the CLI writes
+notes to `00 Inbox/` and uses `10 Projects/ai-rate-limit-handoff/` for the project entry.
+Otherwise it preserves the portable `inbox/` and `projects/` layout.
 
 ### 2. When you are about to hit a limit
 ```bash
@@ -184,6 +192,8 @@ cd rate-limit-handoff
 pip install -e ".[dev]"
 ruff check .
 pytest
+mypy src
+python -m build
 ```
 
 ---

@@ -1,51 +1,51 @@
 # Shipping Checklist for Purple Orange AI
 
-## Ready to go live
+## Current state
 
-The package is polished and installable:
+- Public repository: <https://github.com/PurpleOrangeAI/rate-limit-handoff>
+- Package version: `0.1.0`
+- Local CLI entry points: `rate-limit-handoff`, `rlh`, `limit-handoff`
+- PyPI release: pending
+- Git tag and GitHub release: pending
+
+## Required before the first package release
 
 ```bash
-cd /home/workdir/artifacts/rate-limit-handoff
-# (already tested: pip install -e . works, CLI works, tests pass)
+python -m pytest -q
+python -m ruff check .
+python -m mypy src
+python -m build
 ```
 
-### Create the public repo
+- [ ] Confirm all four validation commands pass from a clean checkout.
+- [ ] Review wheel and source distribution contents under `dist/`.
+- [ ] Publish to TestPyPI and install the uploaded artifact in a clean environment.
+- [ ] Publish version `0.1.0` to PyPI.
+- [ ] Create and push tag `v0.1.0`.
+- [ ] Create the matching GitHub release from `CHANGELOG.md`.
+- [ ] Replace the pending PyPI badge with the live version badge.
+
+## Repository promotion
+
+- [x] Public GitHub repository created.
+- [x] Repository description and topics configured.
+- [ ] Enable the CI workflow and confirm both Python versions pass.
+- [ ] Add a short terminal recording or GIF of init → checkpoint → resume.
+- [ ] Pin the repository on the Purple Orange AI GitHub profile.
+- [ ] Use the reviewed copy in `docs/promotion.md` after the package release is live.
+
+## Local installation
+
+Until PyPI is live:
 
 ```bash
-cd /home/workdir/artifacts/rate-limit-handoff
-git init
-git add .
-git commit -m "feat: initial public release of rate-limit-handoff v0.1.0
-
-Turn AI rate limits into high-quality checkpoints.
-Multi-tool support for Claude Code, Codex, Grok Build, Antigravity, Cursor, Hermes.
-Living handoff.md + automatic Second Brain updates. MIT."
-
-# Create on GitHub (adjust username if needed)
-gh repo create PurpleOrangeAI/rate-limit-handoff --public \
-  --description "Turn AI rate limits into high-quality checkpoints. Schedule across Claude Code, Codex, Grok Build, Antigravity & more." \
-  --source=. --remote=origin --push
-```
-
-### Then
-
-1. Edit `pyproject.toml` email / GitHub URLs if you want a different handle.
-2. Add topics on GitHub: `ai`, `claude`, `codex`, `rate-limit`, `second-brain`, `productivity`, `claude-code`, `cursor`
-3. Use the posts in `docs/promotion.md`
-4. Pin the repo on your GitHub profile
-
-### Local install for yourself
-
-```bash
-pip install -e /home/workdir/artifacts/rate-limit-handoff
-# or after push:
 pip install git+https://github.com/PurpleOrangeAI/rate-limit-handoff.git
 ```
 
-### Next polish (optional, after launch)
+For development:
 
-- Add a simple GIF / screenshot of the flow
-- `python -m build` + upload to PyPI when ready (`twine`)
-- More skills as new tools appear
-
-You're good. This is legitimately useful and well packaged.
+```bash
+git clone https://github.com/PurpleOrangeAI/rate-limit-handoff.git
+cd rate-limit-handoff
+pip install -e ".[dev]"
+```

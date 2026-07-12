@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 authors = [
-    { name = "Purple Orange AI", email = "purpleorangeai@example.com" },
+    { name = "Purple Orange AI" },
 ]
 keywords = [
     "ai", "claude", "codex", "rate-limit", "handoff", "second-brain",
@@ -37,6 +37,7 @@ dev = [
     "pytest>=8.0",
     "ruff>=0.4",
     "mypy>=1.8",
+    "build>=1.2",
 ]
 
 [project.urls]
@@ -62,6 +63,9 @@ include = [
     "/README.md",
     "/LICENSE",
     "/CHANGELOG.md",
+]
+exclude = [
+    "/docs/superpowers",
 ]
 
 [tool.ruff]

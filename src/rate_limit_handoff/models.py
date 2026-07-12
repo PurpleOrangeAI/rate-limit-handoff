@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -15,10 +15,10 @@ class ModelInfo:
     fallback: str
     notes: str
     detect: str
-    cli: Optional[str] = None
+    cli: str | None = None
     aliases: tuple[str, ...] = ()
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return {
             "window": self.window,
             "fallback": self.fallback,
@@ -29,7 +29,7 @@ class ModelInfo:
 
 
 # Canonical registry – extend this list as new tools appear
-MODELS: Dict[str, ModelInfo] = {
+MODELS: dict[str, ModelInfo] = {
     "claude": ModelInfo(
         name="claude",
         window="5h rolling or fixed + weekly caps",
@@ -47,7 +47,10 @@ MODELS: Dict[str, ModelInfo] = {
             "CLI has /status. Dashboard in settings → Usage shows % remaining + reset. "
             "Reasoning minutes burn fast. Headers: x-codex-* family in some integrations."
         ),
-        detect="/status in Codex CLI, Settings → Usage panel, or session files under ~/.codex/sessions",
+        detect=(
+            "/status in Codex CLI, Settings → Usage panel, or session files under "
+            "~/.codex/sessions"
+        ),
         cli="codex",
         aliases=("openai-codex", "gpt-codex"),
     ),
@@ -74,7 +77,8 @@ MODELS: Dict[str, ModelInfo] = {
         window="5h refresh + weekly (heavy system prompt burn)",
         fallback="Gemini Flash / classic Gemini CLI",
         notes=(
-            "agy CLI. /context shows token overhead. Extremely heavy context/tools → burns quotas fast. "
+            "agy CLI. /context shows token overhead. Extremely heavy context/tools → burns "
+            "quotas fast. "
             "Resets every 5h."
         ),
         detect="agy /context or quota messages ('Individual quota reached. Resets in XhYmZs')",
@@ -93,7 +97,7 @@ MODELS: Dict[str, ModelInfo] = {
 }
 
 
-def resolve_model(name: str) -> Optional[ModelInfo]:
+def resolve_model(name: str) -> ModelInfo | None:
     """Resolve a model name or alias to ModelInfo."""
     key = name.lower().strip()
     if key in MODELS:

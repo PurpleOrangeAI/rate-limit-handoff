@@ -5,13 +5,14 @@ from __future__ import annotations
 import datetime as dt
 import json
 import re
+import shlex
 import shutil
 import subprocess
 import textwrap
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
-from .models import MODELS, ModelInfo, resolve_model
+from .models import MODELS, resolve_model
 
 
 class LimitScheduler:
@@ -26,17 +27,30 @@ class LimitScheduler:
 
     def __init__(
         self,
-        workspace: Optional[Path] = None,
+        workspace: Path | None = None,
+        second_brain_root: Path | None = None,
         default_reset_hour: int = 4,
         default_reset_minute: int = 0,
     ) -> None:
         self.workspace = Path(workspace).resolve() if workspace else Path.cwd()
         self.handoff = self.workspace / "handoff.md"
-        self.second_brain = self.workspace / "second_brain"
-        self.inbox = self.second_brain / "inbox"
-        self.projects = self.second_brain / "projects" / "ai-rate-limit-handoff"
-        self.logs = self.second_brain / "logs"
-        self.skills = self.second_brain / "system" / "skills"
+        local_second_brain = self.workspace / "second_brain"
+        self.second_brain = (
+            Path(second_brain_root).resolve() if second_brain_root else local_second_brain
+        )
+        uses_obsidian_layout = all(
+            (self.second_brain / directory).is_dir() for directory in ("00 Inbox", "10 Projects")
+        )
+        if uses_obsidian_layout:
+            self.inbox = self.second_brain / "00 Inbox"
+            self.projects = self.second_brain / "10 Projects" / "ai-rate-limit-handoff"
+            self.second_brain_link = "10 Projects/ai-rate-limit-handoff/README"
+        else:
+            self.inbox = self.second_brain / "inbox"
+            self.projects = self.second_brain / "projects" / "ai-rate-limit-handoff"
+            self.second_brain_link = "projects/ai-rate-limit-handoff/README"
+        self.logs = local_second_brain / "logs"
+        self.skills = local_second_brain / "system" / "skills"
         self.default_reset_hour = default_reset_hour
         self.default_reset_minute = default_reset_minute
 
@@ -45,7 +59,7 @@ class LimitScheduler:
     def now(self) -> dt.datetime:
         return dt.datetime.now()
 
-    def next_reset(self, at_str: Optional[str] = None) -> dt.datetime:
+    def next_reset(self, at_str: str | None = None) -> dt.datetime:
         n = self.now()
         if at_str is None:
             target = n.replace(
@@ -77,12 +91,12 @@ class LimitScheduler:
 
     # ── Usage parsing ─────────────────────────────────────────────────────────
 
-    def parse_usage_text(self, text: str) -> Dict[str, Any]:
+    def parse_usage_text(self, text: str) -> dict[str, Any]:
         """
         Best-effort parser for pasted /status, dashboard, or quota messages.
         Handles common patterns from Codex, Claude Code, Antigravity, etc.
         """
-        result: Dict[str, Any] = {
+        result: dict[str, Any] = {
             "raw": text.strip(),
             "5h_remaining_pct": None,
             "weekly_remaining_pct": None,
@@ -127,20 +141,29 @@ class LimitScheduler:
         self.ensure_dirs()
         ts = self.now().strftime("%Y-%m-%d %H:%M")
         reset_str = reset_dt.strftime("%Y-%m-%d %H:%M")
+        block_title = "Scheduled Continuation" if scheduled else "Handoff Update"
+        reset_label = "Reset time" if scheduled else "Reference time"
+        action_heading = "Exact next action after reset" if scheduled else "Continuation"
+        action_prompt = (
+            'Or paste into AI: "Continue exactly from the Pending section of handoff.md. '
+            'Limits have reset. Prefer full-power model."'
+            if scheduled
+            else 'Or paste into AI: "Continue from the latest Handoff Update in handoff.md."'
+        )
 
         block = textwrap.dedent(f"""
         ---
-        ## Scheduled Continuation ({ts}) — model: {model}
-        **Reset time:** {reset_str}
+        ## {block_title} ({ts}) — model: {model}
+        **{reset_label}:** {reset_str}
         **Summary of remaining work:**
         {summary}
 
-        **Exact next action after reset:**
+        **{action_heading}:**
         1. Open this handoff.md
         2. Run: `rate-limit-handoff --resume`  (or `python -m rate_limit_handoff --resume`)
-        3. Or paste into AI: "Continue exactly from the Pending section of handoff.md. Limits have reset. Prefer full-power model."
+        3. {action_prompt}
 
-        **Second Brain note created:** yes (see second_brain/inbox/)
+        **Second Brain note created:** yes (see the configured Second Brain inbox)
         """)
 
         with open(self.handoff, "a", encoding="utf-8") as f:
@@ -148,9 +171,14 @@ class LimitScheduler:
 
         if self.handoff.exists():
             content = self.handoff.read_text(encoding="utf-8")
+            status = (
+                f"SCHEDULED for {reset_str} ({model}) – resume after reset."
+                if scheduled
+                else f"ACTIVE – checkpoint updated {ts} ({model})."
+            )
             content = re.sub(
                 r"\*\*Status:\*\*.*",
-                f"**Status:** SCHEDULED for {reset_str} ({model}) – resume after reset.",
+                f"**Status:** {status}",
                 content,
                 count=1,
             )
@@ -165,32 +193,50 @@ class LimitScheduler:
         print(f"[ok] Updated {self.handoff}")
 
     def write_second_brain_note(
-        self, summary: str, reset_dt: dt.datetime, model: str = "unknown"
+        self,
+        summary: str,
+        reset_dt: dt.datetime,
+        model: str = "unknown",
+        scheduled: bool = True,
     ) -> Path:
         self.ensure_dirs()
         ts = self.now()
         date_str = ts.strftime("%Y-%m-%d")
         time_str = ts.strftime("%H%M")
-        filename = self.inbox / f"{date_str}-scheduled-handoff-{model}-{time_str}.md"
+        note_kind = "scheduled-handoff" if scheduled else "handoff-update"
+        note_title = "Scheduled Handoff" if scheduled else "Handoff Update"
+        trigger = (
+            "approaching model limit (tokens / 5h window / reasoning minutes)"
+            if scheduled
+            else "manual checkpoint update"
+        )
+        time_label = "Reset at" if scheduled else "Reference time"
+        command_heading = "Resume Command" if scheduled else "Continuation Command"
+        command_hint = (
+            f"# or just open handoff.md in your preferred model after {reset_dt.strftime('%H:%M')}"
+            if scheduled
+            else "# or open handoff.md in your preferred model and continue from the checkpoint"
+        )
+        filename = self.inbox / f"{date_str}-{note_kind}-{model}-{time_str}.md"
 
         content = textwrap.dedent(f"""\
-        # Scheduled Handoff – {ts.strftime("%Y-%m-%d %H:%M")} ({model})
+        # {note_title} – {ts.strftime("%Y-%m-%d %H:%M")} ({model})
 
-        **Reset at:** {reset_dt.strftime("%Y-%m-%d %H:%M")}  
-        **Triggered by:** approaching model limit (tokens / 5h window / reasoning minutes)
+        **{time_label}:** {reset_dt.strftime("%Y-%m-%d %H:%M")}
+        **Triggered by:** {trigger}
 
         ## Remaining Work
         {summary}
 
         ## Context Snapshot
         - See root `handoff.md` for full living state
-        - Project: [[projects/ai-rate-limit-handoff/README]]
+        - Project: [[{self.second_brain_link}]]
         - Model that hit limit: **{model}**
 
-        ## Resume Command
+        ## {command_heading}
         ```bash
         rate-limit-handoff --resume
-        # or just open handoff.md in your preferred model after {reset_dt.strftime("%H:%M")}
+        {command_hint}
         ```
 
         ---
@@ -209,13 +255,18 @@ class LimitScheduler:
             return
 
         if shutil.which("at"):
-            cmd = (
-                f'echo "notify-send \\"AI Limit Reset\\" '
-                f'\\"Resume handoff: {summary[:60]}...\\" || echo Reset time" '
-                f'| at {reset_dt.strftime("%H:%M %Y-%m-%d")}'
+            message = f"Resume handoff: {summary[:60]}..."
+            job = (
+                f"notify-send {shlex.quote('AI Limit Reset')} {shlex.quote(message)} "
+                f"|| echo {shlex.quote('Reset time')}\n"
             )
             try:
-                subprocess.run(cmd, shell=True, check=True)
+                subprocess.run(
+                    ["at", reset_dt.strftime("%H:%M"), reset_dt.strftime("%Y-%m-%d")],
+                    input=job,
+                    text=True,
+                    check=True,
+                )
                 print(f"[ok] Scheduled via `at` for {reset_dt}")
                 return
             except Exception as e:
@@ -232,7 +283,8 @@ class LimitScheduler:
             head -n 80 handoff.md
             echo ""
             echo "Open handoff.md in your AI and continue."
-            notify-send "AI Limit Reset (Claude/Codex/Grok/Antigravity)" "Continue from handoff.md" 2>/dev/null || true
+            notify-send "AI Limit Reset (Claude/Codex/Grok/Antigravity)" \
+              "Continue from handoff.md" 2>/dev/null || true
             """)
         )
         script.chmod(0o755)
@@ -256,7 +308,7 @@ class LimitScheduler:
     def schedule(
         self,
         summary: str,
-        reset_at: Optional[str] = None,
+        reset_at: str | None = None,
         model: str = "unknown",
     ) -> None:
         reset_dt = self.next_reset(reset_at)
@@ -289,11 +341,12 @@ class LimitScheduler:
             '> Read handoff.md completely. Continue exactly from the "Pending / In-Progress Work"'
         )
         print(
-            "> and \"Next Exact Action\" sections. Rate limits have reset. Do not fall back to weaker models."
+            '> and "Next Exact Action" sections. Rate limits have reset. '
+            "Do not fall back to weaker models."
         )
         print("=" * 60)
 
-    def status(self, model: Optional[str] = None) -> None:
+    def status(self, model: str | None = None) -> None:
         n = self.now()
         reset = self.next_reset(None)
         print(f"Local time      : {n.strftime('%Y-%m-%d %H:%M:%S')}")
@@ -320,18 +373,20 @@ class LimitScheduler:
     def update_only(
         self,
         summary: str,
-        reset_at: Optional[str] = None,
+        reset_at: str | None = None,
         model: str = "unknown",
     ) -> None:
         reset_dt = self.next_reset(reset_at)
         self.append_to_handoff(summary, reset_dt, scheduled=False, model=model)
-        self.write_second_brain_note(summary, reset_dt, model=model)
+        self.write_second_brain_note(summary, reset_dt, model=model, scheduled=False)
         print("Updated handoff + Second Brain (no system job scheduled).")
 
     def codex_status(self) -> None:
         """Best-effort local Codex usage hints."""
         print("=== Codex usage (best-effort local detection) ===")
-        print("Note: Full live % is only available inside an active Codex CLI session via `/status`")
+        print(
+            "Note: Full live % is only available inside an active Codex CLI session via `/status`"
+        )
         print("      or in the Codex app Settings → Usage panel.\n")
 
         candidates = [
@@ -344,7 +399,9 @@ class LimitScheduler:
             if p.exists():
                 print(f"[info] Found possible Codex data: {p}")
                 try:
-                    files = sorted(p.glob("**/*"), key=lambda x: x.stat().st_mtime, reverse=True)[:5]
+                    files = sorted(p.glob("**/*"), key=lambda x: x.stat().st_mtime, reverse=True)[
+                        :5
+                    ]
                     for f in files:
                         if f.is_file():
                             mtime = dt.datetime.fromtimestamp(f.stat().st_mtime)
@@ -360,4 +417,4 @@ class LimitScheduler:
         print("  1. Inside Codex CLI run:  /status")
         print("  2. Copy the output and run:")
         print('     rate-limit-handoff --parse-usage "PASTE HERE"')
-        print("  3. Or just use --schedule --model codex --reset-at \"HH:MM\" when you see low %")
+        print('  3. Or just use --schedule --model codex --reset-at "HH:MM" when you see low %')

@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import datetime as dt
+import shlex
 import tempfile
 from pathlib import Path
 
+import rate_limit_handoff.scheduler as scheduler_module
 from rate_limit_handoff.models import MODELS, resolve_model
 from rate_limit_handoff.scheduler import LimitScheduler
 
@@ -58,3 +61,74 @@ def test_schedule_creates_files():
         assert (workspace / "handoff.md").exists()
         notes = list((workspace / "second_brain" / "inbox").glob("*.md"))
         assert len(notes) >= 1
+
+
+def test_update_only_records_active_checkpoint():
+    with tempfile.TemporaryDirectory() as tmp:
+        workspace = Path(tmp)
+        (workspace / "handoff.md").write_text(
+            "# Session Handoff Document\n\n**Status:** Active\n",
+            encoding="utf-8",
+        )
+        sched = LimitScheduler(workspace=workspace)
+
+        sched.update_only("Capture current state", reset_at="23:59", model="codex")
+
+        handoff = (workspace / "handoff.md").read_text(encoding="utf-8")
+        assert "## Handoff Update" in handoff
+        assert "**Status:** ACTIVE" in handoff
+        assert "SCHEDULED" not in handoff
+        assert "**Continuation:**" in handoff
+        assert "after reset" not in handoff.lower()
+        assert "limits have reset" not in handoff.lower()
+
+        notes = list((workspace / "second_brain" / "inbox").glob("*.md"))
+        assert len(notes) == 1
+        assert "scheduled-handoff" not in notes[0].name
+        note = notes[0].read_text(encoding="utf-8")
+        assert note.startswith("# Handoff Update")
+        assert "**Reference time:**" in note
+        assert "## Continuation Command" in note
+        assert "after 23:59" not in note
+
+
+def test_existing_obsidian_vault_uses_canonical_directories():
+    with tempfile.TemporaryDirectory() as tmp:
+        root = Path(tmp)
+        workspace = root / "artifact"
+        vault = root / "vault"
+        (vault / "00 Inbox").mkdir(parents=True)
+        (vault / "10 Projects").mkdir()
+
+        sched = LimitScheduler(workspace=workspace, second_brain_root=vault)
+
+        resolved_workspace = workspace.resolve()
+        resolved_vault = vault.resolve()
+        assert sched.handoff == resolved_workspace / "handoff.md"
+        assert sched.inbox == resolved_vault / "00 Inbox"
+        assert sched.projects == resolved_vault / "10 Projects" / "ai-rate-limit-handoff"
+        assert sched.second_brain_link == "10 Projects/ai-rate-limit-handoff/README"
+        assert sched.logs == resolved_workspace / "second_brain" / "logs"
+        assert sched.skills == resolved_workspace / "second_brain" / "system" / "skills"
+
+
+def test_at_scheduler_does_not_invoke_a_shell(monkeypatch, tmp_path):
+    calls = []
+
+    monkeypatch.setattr(scheduler_module.shutil, "which", lambda name: "/usr/bin/at")
+
+    def capture_run(*args, **kwargs):
+        calls.append((args, kwargs))
+
+    monkeypatch.setattr(scheduler_module.subprocess, "run", capture_run)
+
+    malicious_summary = "$(touch /tmp/unsafe)"
+    sched = LimitScheduler(workspace=tmp_path)
+    sched.try_schedule_system_job(sched.now() + dt.timedelta(hours=1), malicious_summary)
+
+    args, kwargs = calls[0]
+    assert args[0][0] == "at"
+    assert kwargs.get("shell") is not True
+    assert kwargs["text"] is True
+    expected_message = shlex.quote(f"Resume handoff: {malicious_summary}...")
+    assert expected_message in kwargs["input"]

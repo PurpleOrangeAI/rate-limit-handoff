@@ -1,0 +1,20 @@
+# Operating system metadata
+.DS_Store
+
+# Python bytecode and tool caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Environments and local configuration
+.venv/
+venv/
+.env
+.env.*
+
+# Distribution artifacts
+build/
+dist/
+*.egg-info/
