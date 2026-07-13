@@ -26,26 +26,41 @@ API 429s, or user mentions limit / schedule / handoff):
    Auto-run is optional and requires an explicit command. rate-limit-handoff does not
    guess provider commands or query providers to confirm availability.
 
-3. On schedule (B):
-   ```bash
-   rate-limit-handoff --schedule --model grok-build \
-     --reset-at "HH:MM" \
-     --summary "<precise remaining task + critical context>"
-   ```
-   Explicit auto-run examples (Grok commands remain user-supplied):
-   ```bash
-   rate-limit-handoff --schedule --model grok-build --reset-at "16:00" \
-     --summary "Continue the verified work" --auto-run \
-     --command '<explicit user-supplied Grok command>'
-   rate-limit-handoff --handoff --from grok-build --to codex \
-     --summary "Continue now" --auto-run \
-     --command 'codex exec "Read handoff.md and continue"'
-   rate-limit-handoff --handoff --from grok-build --to codex --return-to grok-build \
-     --return-at "16:00" --summary "Continue now, then return" --auto-run \
-     --command 'codex exec "Read handoff.md and continue"' \
-     --return-command '<explicit user-supplied Grok return command>'
-   ```
-   Confirm the handoff was written before any command runs.
+3. Handle the selected route explicitly. If the user's wording does not identify route
+   1, 2, or 3, ask which route they want instead of defaulting to a schedule.
+
+### Route 1 — Same-model wait
+Run (or instruct the user/host to run):
+```bash
+rate-limit-handoff --schedule --model grok-build \
+  --reset-at "HH:MM" \
+  --summary "<precise remaining task + critical context>"
+```
+Only auto-run when the user supplies the exact Grok command:
+```bash
+rate-limit-handoff --schedule --model grok-build --reset-at "16:00" \
+  --summary "Continue the verified work" --auto-run \
+  --command '<explicit user-supplied Grok command>'
+```
+
+### Route 2 — Cross-model handoff
+Use the explicit source and destination. Only auto-run the exact command the user approved:
+```bash
+rate-limit-handoff --handoff --from grok-build --to codex \
+  --summary "Continue now" --auto-run \
+  --command 'codex exec "Read handoff.md and continue"'
+```
+
+### Route 3 — Return later
+Name the temporary destination, original model, return time, and both approved commands:
+```bash
+rate-limit-handoff --handoff --from grok-build --to codex --return-to grok-build \
+  --return-at "16:00" --summary "Continue now, then return" --auto-run \
+  --command 'codex exec "Read handoff.md and continue"' \
+  --return-command '<explicit user-supplied Grok return command>'
+```
+
+Confirm the handoff was written before any command runs.
 
 4. On new session start: always check `handoff.md` first and continue from the Pending
    section if present.

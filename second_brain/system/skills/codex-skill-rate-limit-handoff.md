@@ -26,29 +26,43 @@
    Auto-run is optional and requires an explicit command. rate-limit-handoff does not
    guess provider commands or query providers to confirm availability.
 
-3. If user chooses **B** (or any schedule/handoff language):
-   - Run (or instruct the user/host to run):
-     ```bash
-     rate-limit-handoff --schedule --model codex \
-       --reset-at "HH:MM" \
-       --summary "<one precise sentence of remaining work + key files + acceptance criteria>"
-     ```
-   - Explicit auto-run examples:
-     ```bash
-     rate-limit-handoff --schedule --model codex --reset-at "16:00" \
-       --summary "Continue the verified work" --auto-run \
-       --command 'codex exec "Read handoff.md and continue"'
-     rate-limit-handoff --handoff --from codex --to claude \
-       --summary "Continue now" --auto-run \
-       --command 'claude -p "Read handoff.md and continue"'
-     rate-limit-handoff --handoff --from codex --to claude --return-to codex \
-       --return-at "16:00" --summary "Continue now, then return" --auto-run \
-       --command 'claude -p "Read handoff.md and continue"' \
-       --return-command 'codex exec "Read handoff.md and perform the planned return"'
-     ```
-   - Confirm: "Handoff + Second Brain updated. Resume after reset with
-     `rate-limit-handoff --resume` or just open handoff.md."
-   - Do **not** continue heavy work on a degraded model unless the user explicitly overrides.
+3. Handle the selected route explicitly. If the user's wording does not identify route
+   1, 2, or 3, ask which route they want instead of defaulting to a schedule.
+
+### Route 1 — Same-model wait
+Run (or instruct the user/host to run):
+```bash
+rate-limit-handoff --schedule --model codex \
+  --reset-at "HH:MM" \
+  --summary "<one precise sentence of remaining work + key files + acceptance criteria>"
+```
+Only auto-run when the user supplies the exact command:
+```bash
+rate-limit-handoff --schedule --model codex --reset-at "16:00" \
+  --summary "Continue the verified work" --auto-run \
+  --command 'codex exec "Read handoff.md and continue"'
+```
+
+### Route 2 — Cross-model handoff
+Use the explicit source and destination. Only auto-run the exact command the user approved:
+```bash
+rate-limit-handoff --handoff --from codex --to claude \
+  --summary "Continue now" --auto-run \
+  --command 'claude -p "Read handoff.md and continue"'
+```
+
+### Route 3 — Return later
+Name the temporary destination, original model, return time, and both approved commands:
+```bash
+rate-limit-handoff --handoff --from codex --to claude --return-to codex \
+  --return-at "16:00" --summary "Continue now, then return" --auto-run \
+  --command 'claude -p "Read handoff.md and continue"' \
+  --return-command 'codex exec "Read handoff.md and perform the planned return"'
+```
+
+Confirm: "Handoff + Second Brain updated. Resume after reset with
+`rate-limit-handoff --resume` or just open handoff.md." Do **not** continue heavy work
+on a degraded model unless the user explicitly overrides.
 
 4. At the **start of every new Codex session** after a known reset:
    - Check for `handoff.md` in the workspace root (or Second Brain root).

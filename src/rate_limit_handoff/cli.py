@@ -421,29 +421,43 @@ def _codex_skill() -> str:
    Auto-run is optional and requires an explicit command. rate-limit-handoff does not
    guess provider commands or query providers to confirm availability.
 
-3. If user chooses **B** (or any schedule/handoff language):
-   - Run (or instruct the user/host to run):
-     ```bash
-     rate-limit-handoff --schedule --model codex \\
-       --reset-at "HH:MM" \\
-       --summary "<one precise sentence of remaining work + key files + acceptance criteria>"
-     ```
-   - Explicit auto-run examples:
-     ```bash
-     rate-limit-handoff --schedule --model codex --reset-at "16:00" \\
-       --summary "Continue the verified work" --auto-run \\
-       --command 'codex exec "Read handoff.md and continue"'
-     rate-limit-handoff --handoff --from codex --to claude \\
-       --summary "Continue now" --auto-run \\
-       --command 'claude -p "Read handoff.md and continue"'
-     rate-limit-handoff --handoff --from codex --to claude --return-to codex \\
-       --return-at "16:00" --summary "Continue now, then return" --auto-run \\
-       --command 'claude -p "Read handoff.md and continue"' \\
-       --return-command 'codex exec "Read handoff.md and perform the planned return"'
-     ```
-   - Confirm: "Handoff + Second Brain updated. Resume after reset with
-     `rate-limit-handoff --resume` or just open handoff.md."
-   - Do **not** continue heavy work on a degraded model unless the user explicitly overrides.
+3. Handle the selected route explicitly. If the user's wording does not identify route
+   1, 2, or 3, ask which route they want instead of defaulting to a schedule.
+
+### Route 1 — Same-model wait
+Run (or instruct the user/host to run):
+```bash
+rate-limit-handoff --schedule --model codex \\
+  --reset-at "HH:MM" \\
+  --summary "<one precise sentence of remaining work + key files + acceptance criteria>"
+```
+Only auto-run when the user supplies the exact command:
+```bash
+rate-limit-handoff --schedule --model codex --reset-at "16:00" \\
+  --summary "Continue the verified work" --auto-run \\
+  --command 'codex exec "Read handoff.md and continue"'
+```
+
+### Route 2 — Cross-model handoff
+Use the explicit source and destination. Only auto-run the exact command the user approved:
+```bash
+rate-limit-handoff --handoff --from codex --to claude \\
+  --summary "Continue now" --auto-run \\
+  --command 'claude -p "Read handoff.md and continue"'
+```
+
+### Route 3 — Return later
+Name the temporary destination, original model, return time, and both approved commands:
+```bash
+rate-limit-handoff --handoff --from codex --to claude --return-to codex \\
+  --return-at "16:00" --summary "Continue now, then return" --auto-run \\
+  --command 'claude -p "Read handoff.md and continue"' \\
+  --return-command 'codex exec "Read handoff.md and perform the planned return"'
+```
+
+Confirm: "Handoff + Second Brain updated. Resume after reset with
+`rate-limit-handoff --resume` or just open handoff.md." Do **not** continue heavy work
+on a degraded model unless the user explicitly overrides.
 
 4. At the **start of every new Codex session** after a known reset:
    - Check for `handoff.md` in the workspace root (or Second Brain root).
@@ -492,26 +506,41 @@ API 429s, or user mentions limit / schedule / handoff):
    Auto-run is optional and requires an explicit command. rate-limit-handoff does not
    guess provider commands or query providers to confirm availability.
 
-3. On schedule (B):
-   ```bash
-   rate-limit-handoff --schedule --model grok-build \\
-     --reset-at "HH:MM" \\
-     --summary "<precise remaining task + critical context>"
-   ```
-   Explicit auto-run examples (Grok commands remain user-supplied):
-   ```bash
-   rate-limit-handoff --schedule --model grok-build --reset-at "16:00" \\
-     --summary "Continue the verified work" --auto-run \\
-     --command '<explicit user-supplied Grok command>'
-   rate-limit-handoff --handoff --from grok-build --to codex \\
-     --summary "Continue now" --auto-run \\
-     --command 'codex exec "Read handoff.md and continue"'
-   rate-limit-handoff --handoff --from grok-build --to codex --return-to grok-build \\
-     --return-at "16:00" --summary "Continue now, then return" --auto-run \\
-     --command 'codex exec "Read handoff.md and continue"' \\
-     --return-command '<explicit user-supplied Grok return command>'
-   ```
-   Confirm the handoff was written before any command runs.
+3. Handle the selected route explicitly. If the user's wording does not identify route
+   1, 2, or 3, ask which route they want instead of defaulting to a schedule.
+
+### Route 1 — Same-model wait
+Run (or instruct the user/host to run):
+```bash
+rate-limit-handoff --schedule --model grok-build \\
+  --reset-at "HH:MM" \\
+  --summary "<precise remaining task + critical context>"
+```
+Only auto-run when the user supplies the exact Grok command:
+```bash
+rate-limit-handoff --schedule --model grok-build --reset-at "16:00" \\
+  --summary "Continue the verified work" --auto-run \\
+  --command '<explicit user-supplied Grok command>'
+```
+
+### Route 2 — Cross-model handoff
+Use the explicit source and destination. Only auto-run the exact command the user approved:
+```bash
+rate-limit-handoff --handoff --from grok-build --to codex \\
+  --summary "Continue now" --auto-run \\
+  --command 'codex exec "Read handoff.md and continue"'
+```
+
+### Route 3 — Return later
+Name the temporary destination, original model, return time, and both approved commands:
+```bash
+rate-limit-handoff --handoff --from grok-build --to codex --return-to grok-build \\
+  --return-at "16:00" --summary "Continue now, then return" --auto-run \\
+  --command 'codex exec "Read handoff.md and continue"' \\
+  --return-command '<explicit user-supplied Grok return command>'
+```
+
+Confirm the handoff was written before any command runs.
 
 4. On new session start: always check `handoff.md` first and continue from the Pending
    section if present.
@@ -555,27 +584,42 @@ switching mid-project is painful. Prefer an explicit schedule + handoff.
    Auto-run is optional and requires an explicit command. rate-limit-handoff does not
    guess provider commands or query providers to confirm availability.
 
-3. On B:
-   ```bash
-   rate-limit-handoff --schedule --model antigravity \\
-     --reset-at "HH:MM" \\
-     --summary "<precise next steps + files that matter + acceptance criteria>"
-   ```
-   Explicit auto-run examples (Antigravity commands remain user-supplied):
-   ```bash
-   rate-limit-handoff --schedule --model antigravity --reset-at "16:00" \\
-     --summary "Continue the verified work" --auto-run \\
-     --command '<explicit user-supplied Antigravity command>'
-   rate-limit-handoff --handoff --from antigravity --to codex \\
-     --summary "Continue now" --auto-run \\
-     --command 'codex exec "Read handoff.md and continue"'
-   rate-limit-handoff --handoff --from antigravity --to codex \\
-     --return-to antigravity --return-at "16:00" \\
-     --summary "Continue now, then return" --auto-run \\
-     --command 'codex exec "Read handoff.md and continue"' \\
-     --return-command '<explicit user-supplied Antigravity return command>'
-   ```
-   Confirm and stop. Do not keep burning the remaining quota on low-value loops.
+3. Handle the selected route explicitly. If the user's wording does not identify route
+   1, 2, or 3, ask which route they want instead of defaulting to a schedule.
+
+### Route 1 — Same-model wait
+Run (or instruct the user/host to run):
+```bash
+rate-limit-handoff --schedule --model antigravity \\
+  --reset-at "HH:MM" \\
+  --summary "<precise next steps + files that matter + acceptance criteria>"
+```
+Only auto-run when the user supplies the exact Antigravity command:
+```bash
+rate-limit-handoff --schedule --model antigravity --reset-at "16:00" \\
+  --summary "Continue the verified work" --auto-run \\
+  --command '<explicit user-supplied Antigravity command>'
+```
+
+### Route 2 — Cross-model handoff
+Use the explicit source and destination. Only auto-run the exact command the user approved:
+```bash
+rate-limit-handoff --handoff --from antigravity --to codex \\
+  --summary "Continue now" --auto-run \\
+  --command 'codex exec "Read handoff.md and continue"'
+```
+
+### Route 3 — Return later
+Name the temporary destination, original model, return time, and both approved commands:
+```bash
+rate-limit-handoff --handoff --from antigravity --to codex \\
+  --return-to antigravity --return-at "16:00" \\
+  --summary "Continue now, then return" --auto-run \\
+  --command 'codex exec "Read handoff.md and continue"' \\
+  --return-command '<explicit user-supplied Antigravity return command>'
+```
+
+Confirm and stop. Do not keep burning the remaining quota on low-value loops.
 
 4. Session start rule: if `handoff.md` exists, read it and surface Pending work before
    doing anything else.
@@ -616,9 +660,14 @@ The current model is approaching its limit. Choose a continuity route:
 Auto-run is optional and requires an explicit command. rate-limit-handoff does not
 guess provider commands or query providers to confirm availability.
 
-## On schedule (B)
+## Route handling
 
-Always run (or instruct host to run) the scheduler with the correct `--model` flag:
+Handle the selected route explicitly. If the user's wording does not identify route 1,
+2, or 3, ask which route they want instead of defaulting to a schedule.
+
+### Route 1 — Same-model wait
+
+Run (or instruct the host to run) the scheduler with the correct `--model` flag:
 
 ```bash
 rate-limit-handoff --schedule \\
@@ -627,15 +676,29 @@ rate-limit-handoff --schedule \\
   --summary "<one precise sentence of what still needs to be done + key files + done-when criteria>"
 ```
 
-The general skill uses the same executable examples as the README:
+Only auto-run when the user supplies the exact command:
 
 ```bash
 rate-limit-handoff --schedule --model claude --reset-at "16:00" \\
   --summary "Continue the verified release work" --auto-run \\
   --command 'claude -p "Read handoff.md and continue the exact next action"'
+```
+
+### Route 2 — Cross-model handoff
+
+Use the explicit source and destination. Only auto-run the exact command the user approved:
+
+```bash
 rate-limit-handoff --handoff --from claude --to codex \\
   --summary "Continue from the active handoff chain" --auto-run \\
   --command 'codex exec "Read handoff.md and continue the exact next action"'
+```
+
+### Route 3 — Return later
+
+Name the temporary destination, original model, return time, and both approved commands:
+
+```bash
 rate-limit-handoff --handoff --from claude --to codex --return-to claude \\
   --return-at "16:00" \\
   --summary "Use Codex now, then return for the final review" --auto-run \\

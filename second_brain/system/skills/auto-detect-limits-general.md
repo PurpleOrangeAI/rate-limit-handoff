@@ -31,9 +31,14 @@ The current model is approaching its limit. Choose a continuity route:
 Auto-run is optional and requires an explicit command. rate-limit-handoff does not
 guess provider commands or query providers to confirm availability.
 
-## On schedule (B)
+## Route handling
 
-Always run (or instruct host to run) the scheduler with the correct `--model` flag:
+Handle the selected route explicitly. If the user's wording does not identify route 1,
+2, or 3, ask which route they want instead of defaulting to a schedule.
+
+### Route 1 — Same-model wait
+
+Run (or instruct the host to run) the scheduler with the correct `--model` flag:
 
 ```bash
 rate-limit-handoff --schedule \
@@ -42,15 +47,29 @@ rate-limit-handoff --schedule \
   --summary "<one precise sentence of what still needs to be done + key files + done-when criteria>"
 ```
 
-The general skill uses the same executable examples as the README:
+Only auto-run when the user supplies the exact command:
 
 ```bash
 rate-limit-handoff --schedule --model claude --reset-at "16:00" \
   --summary "Continue the verified release work" --auto-run \
   --command 'claude -p "Read handoff.md and continue the exact next action"'
+```
+
+### Route 2 — Cross-model handoff
+
+Use the explicit source and destination. Only auto-run the exact command the user approved:
+
+```bash
 rate-limit-handoff --handoff --from claude --to codex \
   --summary "Continue from the active handoff chain" --auto-run \
   --command 'codex exec "Read handoff.md and continue the exact next action"'
+```
+
+### Route 3 — Return later
+
+Name the temporary destination, original model, return time, and both approved commands:
+
+```bash
 rate-limit-handoff --handoff --from claude --to codex --return-to claude \
   --return-at "16:00" \
   --summary "Use Codex now, then return for the final review" --auto-run \
