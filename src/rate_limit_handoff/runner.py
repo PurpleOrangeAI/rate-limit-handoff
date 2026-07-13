@@ -209,10 +209,19 @@ def execute_job(
     _write_job(path, data)
 
     if transition is not None:
-        ContinuityStore(workspace).record(
-            transition,
-            event="scheduled_transition",
-        )
+        try:
+            ContinuityStore(workspace).record(
+                transition,
+                event="scheduled_transition",
+            )
+        except Exception as error:
+            exit_code = 1
+            data["exit_code"] = exit_code
+            data["status"] = "failed"
+            data["error"] = str(error)
+            data["finished_at"] = clock().isoformat()
+            _write_job(path, data)
+            return exit_code
 
     try:
         completed = run(argv, cwd=workspace, shell=False, check=False)
