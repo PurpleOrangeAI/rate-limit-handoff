@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 import shlex
 import tempfile
 from pathlib import Path
+
+import pytest
 
 import rate_limit_handoff.scheduler as scheduler_module
 from rate_limit_handoff.models import MODELS, resolve_model
@@ -104,7 +107,7 @@ def test_existing_obsidian_vault_uses_canonical_directories():
 
         resolved_workspace = workspace.resolve()
         resolved_vault = vault.resolve()
-        assert sched.handoff == resolved_workspace / "handoff.md"
+        assert sched.handoff_path == resolved_workspace / "handoff.md"
         assert sched.inbox == resolved_vault / "00 Inbox"
         assert sched.projects == resolved_vault / "10 Projects" / "ai-rate-limit-handoff"
         assert sched.second_brain_link == "10 Projects/ai-rate-limit-handoff/README"
@@ -132,3 +135,189 @@ def test_at_scheduler_does_not_invoke_a_shell(monkeypatch, tmp_path):
     assert kwargs["text"] is True
     expected_message = shlex.quote(f"Resume handoff: {malicious_summary}...")
     assert expected_message in kwargs["input"]
+
+
+def test_schedule_auto_run_persists_before_spawning(monkeypatch, tmp_path):
+    calls: list[str] = []
+
+    monkeypatch.setattr(
+        scheduler_module,
+        "create_job",
+        lambda **kwargs: calls.append("create_job") or tmp_path / "job.json",
+    )
+    monkeypatch.setattr(
+        scheduler_module,
+        "spawn_waiting_job",
+        lambda path: calls.append("spawn_job") or 4242,
+    )
+
+    sched = LimitScheduler(workspace=tmp_path)
+    result = sched.schedule(
+        summary="Resume with Claude",
+        reset_at="2099-07-13 16:00",
+        model="claude",
+        auto_run=True,
+        command_argv=["claude", "-p", "Read handoff.md"],
+    )
+
+    assert result == 0
+    assert calls == ["create_job", "spawn_job"]
+    active = json.loads(
+        (tmp_path / "second_brain" / "logs" / "active_handoff.json").read_text()
+    )
+    assert active["mode"] == "same"
+    assert active["status"] == "waiting"
+
+
+def test_cross_handoff_records_destination_before_execution(monkeypatch, tmp_path):
+    observed: list[str] = []
+
+    def fake_execute(path, wait=False):
+        active = json.loads(
+            (tmp_path / "second_brain" / "logs" / "active_handoff.json").read_text()
+        )
+        observed.append(str(active["current_model"]))
+        return 0
+
+    monkeypatch.setattr(
+        scheduler_module,
+        "create_job",
+        lambda **kwargs: tmp_path / "job.json",
+    )
+    monkeypatch.setattr(scheduler_module, "execute_job", fake_execute)
+
+    sched = LimitScheduler(workspace=tmp_path)
+    result = sched.handoff(
+        summary="Continue now",
+        from_model="claude",
+        to_model="codex",
+        auto_run=True,
+        command_argv=["codex", "exec", "Read handoff.md"],
+    )
+
+    assert result == 0
+    assert observed == ["codex"]
+
+
+def test_return_handoff_schedules_return_before_destination(monkeypatch, tmp_path):
+    calls: list[str] = []
+
+    def fake_create(**kwargs):
+        calls.append(f"create:{kwargs['mode']}")
+        return tmp_path / f"{kwargs['mode']}.json"
+
+    monkeypatch.setattr(scheduler_module, "create_job", fake_create)
+    monkeypatch.setattr(
+        scheduler_module,
+        "spawn_waiting_job",
+        lambda path: calls.append("spawn:return") or 4242,
+    )
+    monkeypatch.setattr(
+        scheduler_module,
+        "execute_job",
+        lambda path, wait=False: calls.append("execute:cross") or 0,
+    )
+
+    sched = LimitScheduler(workspace=tmp_path)
+    result = sched.handoff(
+        summary="Use Codex, then return",
+        from_model="claude",
+        to_model="codex",
+        return_to="claude",
+        return_at="2099-07-13 16:00",
+        auto_run=True,
+        command_argv=["codex", "exec", "Read handoff.md"],
+        return_command_argv=["claude", "-p", "Read handoff.md"],
+    )
+
+    assert result == 0
+    assert calls == [
+        "create:return",
+        "spawn:return",
+        "create:cross",
+        "execute:cross",
+    ]
+    active = json.loads(
+        (tmp_path / "second_brain" / "logs" / "active_handoff.json").read_text()
+    )
+    assert active["mode"] == "return"
+    assert active["current_model"] == "codex"
+    assert active["return_to"] == "claude"
+
+
+def test_resume_preference_changes_prompt(tmp_path, capsys):
+    (tmp_path / "handoff.md").write_text("# Handoff\n", encoding="utf-8")
+    sched = LimitScheduler(workspace=tmp_path)
+
+    result = sched.resume(prefer="claude")
+
+    assert result == 0
+    assert "Preferred model: claude" in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("mode", ["same", "cross", "return"])
+def test_auto_run_requires_all_commands_before_workspace_mutation(tmp_path, mode):
+    workspace = tmp_path / mode
+    sched = LimitScheduler(workspace=workspace)
+
+    with pytest.raises(ValueError, match="explicit .*command"):
+        if mode == "same":
+            sched.schedule(summary="Wait", auto_run=True, command_argv=[])
+        elif mode == "cross":
+            sched.handoff(
+                summary="Continue elsewhere",
+                from_model="claude",
+                to_model="unknown-provider/model",
+                auto_run=True,
+                command_argv=[],
+            )
+        else:
+            sched.handoff(
+                summary="Continue and return",
+                from_model="claude",
+                to_model="unknown-provider/model",
+                return_to="claude",
+                return_at="2099-07-13 16:00",
+                auto_run=True,
+                command_argv=["new-provider", "continue"],
+                return_command_argv=[],
+            )
+
+    assert not workspace.exists()
+
+
+@pytest.mark.parametrize("mode", ["same", "cross"])
+def test_unknown_model_is_preserved_but_sanitized_in_note_filename(
+    monkeypatch, tmp_path, mode
+):
+    model = "../../unknown-provider/future-model"
+    sched = LimitScheduler(workspace=tmp_path)
+    monkeypatch.setattr(sched, "try_schedule_system_job", lambda *args: None)
+
+    if mode == "same":
+        result = sched.schedule(summary="Continue", model=model)
+    else:
+        monkeypatch.setattr(
+            scheduler_module,
+            "create_job",
+            lambda **kwargs: tmp_path / "unknown-provider-job.json",
+        )
+        monkeypatch.setattr(scheduler_module, "execute_job", lambda path, wait=False: 0)
+        result = sched.handoff(
+            summary="Continue elsewhere",
+            from_model="claude",
+            to_model=model,
+            auto_run=True,
+            command_argv=["unknown-provider", "continue"],
+        )
+
+    assert result == 0
+    active = json.loads(
+        (tmp_path / "second_brain" / "logs" / "active_handoff.json").read_text()
+    )
+    assert active["current_model"] == model
+    notes = list((tmp_path / "second_brain" / "inbox").glob("*.md"))
+    assert len(notes) == 1
+    assert notes[0].parent.resolve() == (tmp_path / "second_brain" / "inbox").resolve()
+    assert model in notes[0].read_text(encoding="utf-8")
+    assert not (tmp_path / "unknown-provider").exists()

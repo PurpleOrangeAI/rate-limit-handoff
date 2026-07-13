@@ -9,10 +9,13 @@ import shlex
 import shutil
 import subprocess
 import textwrap
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
+from .continuity import ContinuityStore, HandoffState
 from .models import MODELS, resolve_model
+from .runner import create_job, execute_job, spawn_waiting_job
 
 
 class LimitScheduler:
@@ -33,7 +36,7 @@ class LimitScheduler:
         default_reset_minute: int = 0,
     ) -> None:
         self.workspace = Path(workspace).resolve() if workspace else Path.cwd()
-        self.handoff = self.workspace / "handoff.md"
+        self.handoff_path = self.workspace / "handoff.md"
         local_second_brain = self.workspace / "second_brain"
         self.second_brain = (
             Path(second_brain_root).resolve() if second_brain_root else local_second_brain
@@ -53,6 +56,7 @@ class LimitScheduler:
         self.skills = local_second_brain / "system" / "skills"
         self.default_reset_hour = default_reset_hour
         self.default_reset_minute = default_reset_minute
+        self.continuity = ContinuityStore(self.workspace, now=self.now)
 
     # ── Time helpers ──────────────────────────────────────────────────────────
 
@@ -86,7 +90,7 @@ class LimitScheduler:
             return self.next_reset(None)
 
     def ensure_dirs(self) -> None:
-        for d in (self.inbox, self.projects, self.logs, self.handoff.parent, self.skills):
+        for d in (self.inbox, self.projects, self.logs, self.handoff_path.parent, self.skills):
             d.mkdir(parents=True, exist_ok=True)
 
     # ── Usage parsing ─────────────────────────────────────────────────────────
@@ -166,11 +170,11 @@ class LimitScheduler:
         **Second Brain note created:** yes (see the configured Second Brain inbox)
         """)
 
-        with open(self.handoff, "a", encoding="utf-8") as f:
+        with open(self.handoff_path, "a", encoding="utf-8") as f:
             f.write(block)
 
-        if self.handoff.exists():
-            content = self.handoff.read_text(encoding="utf-8")
+        if self.handoff_path.exists():
+            content = self.handoff_path.read_text(encoding="utf-8")
             status = (
                 f"SCHEDULED for {reset_str} ({model}) – resume after reset."
                 if scheduled
@@ -189,8 +193,8 @@ class LimitScheduler:
                         lines[i] = f"**Last Updated:** {ts}"
                         break
                 content = "\n".join(lines)
-            self.handoff.write_text(content, encoding="utf-8")
-        print(f"[ok] Updated {self.handoff}")
+            self.handoff_path.write_text(content, encoding="utf-8")
+        print(f"[ok] Updated {self.handoff_path}")
 
     def write_second_brain_note(
         self,
@@ -217,7 +221,8 @@ class LimitScheduler:
             if scheduled
             else "# or open handoff.md in your preferred model and continue from the checkpoint"
         )
-        filename = self.inbox / f"{date_str}-{note_kind}-{model}-{time_str}.md"
+        safe_model = self._model_filename_component(model)
+        filename = self.inbox / f"{date_str}-{note_kind}-{safe_model}-{time_str}.md"
 
         content = textwrap.dedent(f"""\
         # {note_title} – {ts.strftime("%Y-%m-%d %H:%M")} ({model})
@@ -243,6 +248,52 @@ class LimitScheduler:
         *Auto-written by rate-limit-handoff so knowledge never evaporates when a limit hits.*
         """)
         filename.write_text(content, encoding="utf-8")
+        print(f"[ok] Second Brain note → {filename}")
+        return filename
+
+    @staticmethod
+    def _model_filename_component(model: str) -> str:
+        """Return a bounded filename component without changing the recorded model."""
+        safe_model = re.sub(r"[^A-Za-z0-9_-]+", "-", model).strip("-_")
+        return safe_model[:80] or "unknown"
+
+    def write_continuity_note(self, state: HandoffState) -> Path:
+        self.ensure_dirs()
+        timestamp = self.now()
+        safe_model = self._model_filename_component(state.current_model)
+        filename = self.inbox / (
+            f"{timestamp.strftime('%Y-%m-%d')}-handoff-{state.mode}-"
+            f"{safe_model}-{timestamp.strftime('%H%M')}.md"
+        )
+        lines = [
+            f"# {state.mode.title()} Handoff – {timestamp.strftime('%Y-%m-%d %H:%M')}",
+            "",
+            f"**Status:** {state.status}",
+            f"**From:** {state.source_model}",
+            f"**Current model:** {state.current_model}",
+            f"**Summary:** {state.summary}",
+        ]
+        if state.reset_at:
+            lines.append(f"**Reset at:** {state.reset_at.isoformat(timespec='minutes')}")
+        if state.return_to:
+            lines.append(f"**Return to:** {state.return_to}")
+        if state.return_at:
+            lines.append(f"**Return at:** {state.return_at.isoformat(timespec='minutes')}")
+        lines.extend(
+            [
+                "",
+                "## Continue",
+                "",
+                "Read the workspace handoff.md and follow its Active Handoff Chain.",
+                "",
+                f"Project: [[{self.second_brain_link}]]",
+                "",
+                "---",
+                "*Written by rate-limit-handoff v0.2.1.*",
+                "",
+            ]
+        )
+        filename.write_text("\n".join(lines), encoding="utf-8")
         print(f"[ok] Second Brain note → {filename}")
         return filename
 
@@ -296,7 +347,7 @@ class LimitScheduler:
             "scheduled_at": self.now().isoformat(),
             "resume_at": reset_dt.isoformat(),
             "summary": summary,
-            "handoff": str(self.handoff),
+            "handoff": str(self.handoff_path),
         }
         log_file = self.logs / "schedule_log.jsonl"
         with open(log_file, "a", encoding="utf-8") as f:
@@ -310,41 +361,186 @@ class LimitScheduler:
         summary: str,
         reset_at: str | None = None,
         model: str = "unknown",
-    ) -> None:
+        *,
+        auto_run: bool = False,
+        command_argv: list[str] | None = None,
+    ) -> int:
+        if auto_run:
+            self._validate_explicit_command(
+                command_argv,
+                "same-model auto-run requires an explicit command",
+            )
+
         reset_dt = self.next_reset(reset_at)
-        model = model.lower()
         print(
             f"Scheduling for: {reset_dt.strftime('%Y-%m-%d %H:%M')}  "
             f"(in {(reset_dt - self.now()).total_seconds() / 60:.0f} min)  model={model}"
         )
         self.append_to_handoff(summary, reset_dt, model=model)
         self.write_second_brain_note(summary, reset_dt, model=model)
-        self.try_schedule_system_job(reset_dt, summary)
-        print("\n✅ Done. When the limit resets, just open handoff.md and continue.")
-        print("   Or run:  rate-limit-handoff --resume")
 
-    def resume(self) -> None:
-        if not self.handoff.exists():
+        created_at = self.now()
+        waiting = HandoffState(
+            mode="same",
+            source_model=model,
+            current_model=model,
+            summary=summary,
+            status="waiting",
+            created_at=created_at,
+            updated_at=created_at,
+            reset_at=reset_dt,
+        )
+        self.continuity.record(waiting, event="same_model_wait")
+
+        if not auto_run:
+            self.try_schedule_system_job(reset_dt, summary)
+            print("\nDone. Open handoff.md or run rate-limit-handoff --resume after reset.")
+            return 0
+
+        assert command_argv is not None
+        resumed = replace(waiting, status="resumed", updated_at=reset_dt)
+        job_path = create_job(
+            logs_path=self.logs,
+            workspace=self.workspace,
+            mode="same",
+            model=model,
+            run_at=reset_dt,
+            argv=command_argv,
+            transition=resumed,
+            now=self.now,
+        )
+        pid = spawn_waiting_job(job_path)
+        print(f"[ok] Auto-run job: {job_path} (pid {pid})")
+        print("[info] Detached local jobs are best-effort and are not reboot durable.")
+        return 0
+
+    def handoff(
+        self,
+        *,
+        summary: str,
+        from_model: str,
+        to_model: str,
+        return_to: str | None = None,
+        return_at: str | None = None,
+        auto_run: bool = False,
+        command_argv: list[str] | None = None,
+        return_command_argv: list[str] | None = None,
+    ) -> int:
+        if bool(return_to) != bool(return_at):
+            raise ValueError("return_to and return_at must be supplied together")
+        if auto_run:
+            self._validate_explicit_command(
+                command_argv,
+                "cross-model auto-run requires an explicit command",
+            )
+            if return_to:
+                self._validate_explicit_command(
+                    return_command_argv,
+                    "planned return auto-run requires an explicit return command",
+                )
+
+        return_dt = self.next_reset(return_at) if return_at else None
+        created_at = self.now()
+        state = HandoffState(
+            mode="return" if return_to else "cross",
+            source_model=from_model,
+            current_model=to_model,
+            summary=summary,
+            status="temporary" if return_to else "handed_off",
+            created_at=created_at,
+            updated_at=created_at,
+            return_to=return_to,
+            return_at=return_dt,
+        )
+        self.continuity.record(
+            state,
+            event="planned_return" if return_to else "cross_handoff",
+        )
+        self.write_continuity_note(state)
+
+        if not auto_run:
+            print("[ok] Handoff recorded. Open handoff.md in the destination model.")
+            return 0
+
+        assert command_argv is not None
+        if return_to and return_dt:
+            assert return_command_argv is not None
+            returned = replace(
+                state,
+                current_model=return_to,
+                status="returned",
+                updated_at=return_dt,
+            )
+            return_job = create_job(
+                logs_path=self.logs,
+                workspace=self.workspace,
+                mode="return",
+                model=return_to,
+                run_at=return_dt,
+                argv=return_command_argv,
+                transition=returned,
+                now=self.now,
+            )
+            pid = spawn_waiting_job(return_job)
+            print(f"[ok] Planned return job: {return_job} (pid {pid})")
+            print("[info] Detached local jobs are best-effort and are not reboot durable.")
+
+        immediate_job = create_job(
+            logs_path=self.logs,
+            workspace=self.workspace,
+            mode="cross",
+            model=to_model,
+            run_at=created_at,
+            argv=command_argv,
+            transition=None,
+            now=self.now,
+        )
+        return execute_job(immediate_job, wait=False)
+
+    @staticmethod
+    def _validate_explicit_command(command_argv: list[str] | None, message: str) -> None:
+        if (
+            not isinstance(command_argv, list)
+            or not command_argv
+            or not all(isinstance(argument, str) for argument in command_argv)
+            or not command_argv[0].strip()
+        ):
+            raise ValueError(message)
+
+    def resume(self, prefer: str | None = None) -> int:
+        if not self.handoff_path.exists():
             print("No handoff.md found in current workspace.")
-            print(f"Looked in: {self.handoff}")
-            return
+            print(f"Looked in: {self.handoff_path}")
+            return 0
+
+        if prefer:
+            current = self.continuity.load()
+            if current:
+                preferred = replace(
+                    current,
+                    preferred_model=prefer.lower(),
+                    updated_at=self.now(),
+                )
+                self.continuity.record(preferred, event="resume_preference")
+
         print("=" * 60)
         print("HANDOFF RESUME")
         print("=" * 60)
-        content = self.handoff.read_text(encoding="utf-8")
+        if prefer:
+            print(f"Preferred model: {prefer.lower()}")
+        content = self.handoff_path.read_text(encoding="utf-8")
         print(content[:4000])
         if len(content) > 4000:
             print("\n... (truncated — open the full file)")
         print("\n" + "=" * 60)
-        print("Paste the following into your AI after the reset:\n")
+        preferred_text = f" Prefer {prefer.lower()}." if prefer else ""
+        print("Paste the following into your AI:\n")
         print(
             '> Read handoff.md completely. Continue exactly from the "Pending / In-Progress Work"'
         )
-        print(
-            '> and "Next Exact Action" sections. Rate limits have reset. '
-            "Do not fall back to weaker models."
-        )
+        print(f'> and "Next Exact Action" sections.{preferred_text}')
         print("=" * 60)
+        return 0
 
     def status(self, model: str | None = None) -> None:
         n = self.now()
@@ -355,7 +551,7 @@ class LimitScheduler:
             f"({(reset - n).total_seconds() / 3600:.1f} h)"
         )
         print(f"Workspace       : {self.workspace}")
-        print(f"Handoff exists  : {self.handoff.exists()}")
+        print(f"Handoff exists  : {self.handoff_path.exists()}")
         print(f"Second Brain    : {self.second_brain}")
         if model:
             info = resolve_model(model)

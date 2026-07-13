@@ -176,12 +176,12 @@ def cmd_init(sched: LimitScheduler) -> int:
     sched.ensure_dirs()
 
     # Create a starter handoff.md if missing
-    if not sched.handoff.exists():
+    if not sched.handoff_path.exists():
         starter = textwrap_starter_handoff()
-        sched.handoff.write_text(starter, encoding="utf-8")
-        print(f"[ok] Created {sched.handoff}")
+        sched.handoff_path.write_text(starter, encoding="utf-8")
+        print(f"[ok] Created {sched.handoff_path}")
     else:
-        print(f"[skip] {sched.handoff} already exists")
+        print(f"[skip] {sched.handoff_path} already exists")
 
     # Copy skills from package templates if we ship them
     # For now create them from embedded content
