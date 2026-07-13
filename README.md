@@ -5,181 +5,194 @@
 </p>
 
 <p align="center">
-  <strong>Turn AI rate limits into high-quality checkpoints.</strong><br>
-  Schedule remaining work across Claude Code • Codex • Grok Build • Antigravity • Cursor • Hermes.<br>
-  Auto-update your Second Brain + living <code>handoff.md</code> so context never evaporates.
+  <strong>Turn AI rate limits into high-quality checkpoints<br>and real multi-model continuity.</strong><br>
+  Same-model wait • Cross-model handoff • Planned return<br>
+  Claude Code • Codex • Grok Build • Antigravity • Cursor • Hermes
 </p>
 
 <p align="center">
-  <a href="https://pypi.org/project/rate-limit-handoff/"><img src="https://img.shields.io/pypi/v/rate-limit-handoff.svg" alt="PyPI"></a>
+  <a href="https://github.com/PurpleOrangeAI/rate-limit-handoff/releases/tag/v0.2.0"><img src="https://img.shields.io/badge/version-0.2.0-blue.svg" alt="Version"></a>
   <a href="https://github.com/PurpleOrangeAI/rate-limit-handoff/blob/main/LICENSE"><img src="https://img.shields.io/badge/license-MIT-blue.svg" alt="MIT"></a>
   <a href="https://github.com/PurpleOrangeAI/rate-limit-handoff"><img src="https://img.shields.io/badge/python-3.10%2B-blue.svg" alt="Python"></a>
-  <img src="https://img.shields.io/badge/status-beta-yellow.svg" alt="Status">
+  <img src="https://img.shields.io/badge/status-public%20beta-yellow.svg" alt="Status">
 </p>
 
 ---
 
-## Why this exists
+## The real problem
 
-You hit the 5-hour wall on Claude Code or Codex at 1:50 AM.  
-Reset is at 4:00 AM.  
+You are deep in a complex task on Claude Code (or Codex, Antigravity, Grok Build…).
 
-Most people either:
-- Wait idle (lose flow), or  
-- Drop to a weaker model (5.4 / mini / Flash) and produce lower-quality work.
+The bar is almost empty. The 5-hour window is about to close.
 
-**rate-limit-handoff** gives you a third option:
+What do most people actually do?
 
-> **Schedule** the exact remaining work for the moment the limit re-opens.  
-> Snapshot everything into a living `handoff.md` + a permanent Second Brain note.  
-> Resume cleanly with full power.
+1. Sit and wait (sometimes hours).
+2. Drop to a weaker model *on the same tool* and accept lower quality.
+3. **Switch to a completely different provider** (Claude → Codex, Codex → Claude, Antigravity → Claude, etc.) and try to reconstruct context from memory or chat history.
 
-Rate limits stop being interruptions and become **forced high-quality checkpoints** that compound knowledge.
+Option 3 is the most common in practice. It is also the most expensive in lost context and architectural continuity.
+
+**rate-limit-handoff** turns that painful context switch into a clean, deliberate handoff.
 
 ---
 
-## Features
+## What this tool actually does
 
-- **Multi-tool by design** — Claude Code, OpenAI Codex, Grok Build, Antigravity (agy), Cursor, Hermes
-- **Proactive offer** — skills/rules that make the AI itself offer the schedule choice when capacity is low
-- **One living handoff.md** — single source of truth that works across tools and machines
-- **Second Brain integration** — every schedule automatically writes a dated note so knowledge compounds
-- **Usage parsers** — paste `/status` or dashboard text; extracts remaining % and reset hint
-- **Best-effort local jobs** — creates `at`/cron-friendly resume scripts + desktop notifications
-- **Zero heavy deps** — pure Python stdlib, works offline
-- **MIT licensed** — use it, fork it, ship it inside your company
+It gives you three powerful modes instead of chaos:
+
+| Mode | What it does | When you use it |
+|------|--------------|-----------------|
+| **Same-model wait** | Park the work cleanly and resume on the *same* model when its next window opens | Maximum quality continuity |
+| **Cross-model handoff** | Instantly hand the exact next action + critical context to a *different* model | Keep moving *right now* |
+| **Return later** | Temporary switch to another model + planned return to the original one | e.g. Claude → Codex for implementation → back to Claude for final review |
+
+Every time you schedule or hand off, it:
+
+- Updates a living `handoff.md` (single source of truth)
+- Writes a permanent dated note into your Second Brain
+- Creates a clear resume path
+
+Context stops evaporating. Knowledge compounds.
+
+---
+
+## Why this matters more than it sounds
+
+High-compute models will always have rate limits (or temporary “unlimited” promotions that later change).  
+The teams that win are not the ones who never hit limits.  
+They are the ones who treat limits as **routing decisions** instead of quality drops or lost sessions.
+
+This tool makes that routing clean, deliberate, and knowledge-preserving.
+
+> **Note on Codex (July 2026):**  
+> OpenAI temporarily removed the hard 5-hour limit for many users. The tool still works perfectly for Codex (and becomes even more useful the moment any limit or weekly cap reappears, or when you simply want to rotate to Claude / Antigravity / Grok for a different strength).
 
 ---
 
 ## Quick Start
 
 ```bash
-# Install (recommended)
 pip install rate-limit-handoff
 
-# Or from source
-git clone https://github.com/PurpleOrangeAI/rate-limit-handoff.git
-cd rate-limit-handoff
-pip install -e .
-```
-
-### 1. Bootstrap a workspace (once)
-```bash
+# Bootstrap a workspace (once)
 cd /path/to/your/project-or-second-brain
 rate-limit-handoff --init
 ```
 
-This creates:
-- `handoff.md` (living session state)
-- `second_brain/` skeleton with skills + project notes
-
-### 2. When you are about to hit a limit
+### 1. Same-model wait (classic high-quality path)
 ```bash
 rate-limit-handoff --schedule \
-  --reset-at "04:00" \
-  --model codex \
-  --summary "Finish agent swarm on feature X, open PRs, update tests"
+  --model claude \
+  --reset-at "16:00" \
+  --summary "Finish architecture decisions + open PRs with tests"
 ```
 
-### 3. After the reset
+### 2. Immediate cross-model handoff (most common real-world use)
 ```bash
+rate-limit-handoff --handoff \
+  --from claude \
+  --to codex \
+  --summary "Continue agent swarm implementation from the current state"
+```
+
+### 3. Temporary switch + planned return
+```bash
+rate-limit-handoff --handoff \
+  --from claude \
+  --to codex \
+  --return-to claude \
+  --return-at "16:00" \
+  --summary "Codex does the heavy implementation, then return to Claude for final architecture review"
+```
+
+### 4. Resume
+```bash
+rate-limit-handoff --resume --prefer claude
+# or simply
 rate-limit-handoff --resume
-# or just open handoff.md in Claude/Codex/Grok/agy and say "continue from handoff"
-```
-
-### Extra power
-```bash
-# Parse Codex /status or any dashboard paste
-rate-limit-handoff --parse-usage "5h limit: 12% left (resets 04:00)"
-
-# Local Codex hints
-rate-limit-handoff --codex-status
-
-# Status + model info
-rate-limit-handoff --status --model antigravity
 ```
 
 ---
 
-## Supported Tools
+## The skill makes the AI offer the choice
 
-| Tool | Window style | Detection | Fallback |
-|------|--------------|-----------|----------|
-| **Claude Code** | 5h + weekly | UI countdown / % | lighter Claude / Haiku |
-| **OpenAI Codex** | 5h + weekly (reasoning heavy) | `/status`, Settings → Usage | GPT-5.4 / mini |
-| **Grok Build** | Usage % + API | CLI / console | lighter Grok |
-| **Antigravity (agy)** | 5h refresh + weekly | `/context`, "Resets in Xh" | Gemini Flash |
-| **Cursor** | Backend-model dependent | Model switcher | cheaper model |
-| **Hermes + Grok** | SuperGrok weekly + RPS/TPM | Hermes /usage | Grok-3 / mini |
-
-The single `handoff.md` is the universal bridge. Start in Claude Code, hit limit, schedule, resume in Codex (or vice-versa). Your Second Brain stays coherent.
-
----
-
-## Skills & Instructions (copy these)
-
-After `--init` you get ready-to-use skills in `second_brain/system/skills/`:
-
-- `codex-skill-rate-limit-handoff.md`
-- `grok-build-rule-rate-limit-handoff.md`
-- `antigravity-agy-skill-rate-limit-handoff.md`
-- `auto-detect-limits-general.md`
-
-**Copy the relevant skill** into:
-- Claude Project custom instructions / Claude Code
-- Codex skills or system prompt
-- Grok Build / Hermes system prompt
-- Antigravity (agy) rules
-- Cursor Rules (`.cursor/rules`)
-- Continue.dev / any multi-model frontend
-
-They make the AI itself detect low capacity and offer the schedule choice automatically.
-
----
-
-## Architecture (mental model)
+When capacity is low, any agent using the skill now offers:
 
 ```
-┌─────────────────┐     low capacity      ┌──────────────────────┐
-│  Any AI Session │ ───────────────────►  │  Offer: Schedule?    │
-│  Claude / Codex │                       │  or Fall back        │
-│  Grok / agy /   │                       └──────────┬───────────┘
-│  Cursor / etc   │                                  │ yes
-└─────────────────┘                                  ▼
-┌─────────────────┐     update            ┌──────────────────────┐
-│  handoff.md     │ ◄──────────────────── │  rate-limit-handoff  │
-│  (living state) │                       │  + Second Brain note │
-└─────────────────┘                       └──────────┬───────────┘
-                                                     │
-                                                     │ schedule
-                                                     ▼
-                                          ┌──────────────────────┐
-                                          │  at / cron / script  │
-                                          │  desktop notif       │
-                                          └──────────────────────┘
+A) Fall back to a lighter model *on the same tool* and keep going right now.
+B) Wait for the *same model*’s next window and resume with full power.
+C) Hand off *now* to a different model (and optionally plan a return later).
 ```
 
----
-
-## Design Philosophy
-
-1. **Prefer schedule over silent fallback** — quality > speed when the work matters.
-2. **Always write to both** handoff.md **and** a dated Second Brain note — knowledge compounds.
-3. **Model-agnostic** — the same workflow works whether you live in Claude Code, Codex, or rotate between them.
-4. **Zero magic, full control** — pure Python, no telemetry, no cloud, no accounts.
-5. **Forced checkpoints are a feature** — every time you schedule you leave a clean, resumable trail.
+This is the UX that turns rate limits into routing decisions instead of silent quality degradation.
 
 ---
 
-## Development
+## What gets written every time
+
+- **Living `handoff.md`** – Active Handoff Chain table + full event history + exact next action
+- **Second Brain note** – permanent dated capture so knowledge never dies in chat history
+- Optional local resume scripts / notifications
+
+One source of truth that works across Claude Code, Codex, Antigravity, Grok Build, Cursor, and Hermes.
+
+---
+
+## Supported tools
+
+| Tool | Notes |
+|------|-------|
+| Claude Code / Claude Projects | Full support |
+| OpenAI Codex | Full support (including periods with relaxed limits) |
+| Grok Build + Hermes | Full support |
+| Antigravity (agy) | Especially useful — burns quotas extremely fast |
+| Cursor | Works via underlying model limits |
+| Any tool that can load a skill / system prompt | Works |
+
+---
+
+## Philosophy
+
+**Prefer schedule / handoff over silent fallback.**
+
+Quality continuity + knowledge compounding is almost always more valuable than finishing a mediocre version on a weaker model or losing context while switching providers.
+
+---
+
+## Install / Upgrade
 
 ```bash
-git clone https://github.com/PurpleOrangeAI/rate-limit-handoff.git
-cd rate-limit-handoff
-pip install -e ".[dev]"
-ruff check .
-pytest
+pip install -U rate-limit-handoff
+
+# or from source
+pip install -U git+https://github.com/PurpleOrangeAI/rate-limit-handoff.git
 ```
+
+Requires Python 3.10+.
+
+---
+
+## Status
+
+Public beta · MIT · Pure Python · Zero heavy dependencies · No telemetry · No cloud account required
+
+Built by [Purple Orange AI](https://purpleorange.ai) for operators who refuse to lose flow or quality.
+
+---
+
+## Links
+
+- **Release notes (v0.2.0):** https://github.com/PurpleOrangeAI/rate-limit-handoff/releases/tag/v0.2.0
+- **Landing page:** https://purpleorangeai.github.io/rate-limit-handoff/
+- **Changelog:** [CHANGELOG.md](./CHANGELOG.md)
+
+---
+
+**Rate limits are not the enemy.**  
+Lost context and quality drops are.
+
+This tool fixes both.
 
 ---
 
@@ -190,12 +203,14 @@ pytest
 - [ ] Telegram / Discord / desktop toast on schedule fire
 - [ ] Obsidian / Logseq plugin for richer Second Brain integration
 - [ ] More tools (Kilo, Cline, Roo, etc.) as they mature
+- [ ] Smarter model routing suggestions based on available plans / remaining quota (future)
 
 ---
 
 ## Contributing
 
 PRs welcome. Especially:
+
 - New model/tool definitions
 - Better usage parsers
 - Skills for additional frontends
@@ -225,3 +240,4 @@ This project exists because the best solution is the one that also grows your Se
   Made with ❤️ for builders who refuse to lose flow.<br>
   <a href="https://github.com/PurpleOrangeAI">@PurpleOrangeAI</a>
 </p>
+
