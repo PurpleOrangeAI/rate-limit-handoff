@@ -5,11 +5,6 @@
 </p>
 
 <p align="center">
-  <strong>Turn rate limits into high-quality checkpoints</strong><br>
-  Schedule remaining work across Claude Code • Codex • Grok Build • Antigravity • Cursor
-</p>
-
-<p align="center">
   <strong>Turn AI rate limits into high-quality checkpoints.</strong><br>
   Schedule remaining work across Claude Code • Codex • Grok Build • Antigravity • Cursor • Hermes.<br>
   Auto-update your Second Brain + living <code>handoff.md</code> so context never evaporates.
