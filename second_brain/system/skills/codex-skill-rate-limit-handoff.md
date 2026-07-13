@@ -2,7 +2,7 @@
 
 **Name:** rate-limit-handoff  
 **For:** OpenAI Codex (CLI, app, or VS Code extension)  
-**Version:** 0.1.0  
+**Version:** 0.2.1
 
 ## When to activate
 - Remaining 5h usage is estimated < 20% (from `/status` or Settings → Usage)
@@ -13,15 +13,18 @@
 ## Behavior (must follow)
 
 1. **Stop** generating large new diffs or spawning more sub-agents.
-2. Offer exactly this choice (adapt only slightly for tone):
+2. Offer these routes:
 
-   > We're approaching the Codex 5h (or weekly) limit.  
-   > **A)** Fall back to a lighter model (GPT-5.4 / mini) and continue now.  
-   > **B)** (recommended) Schedule the remaining work for the next reset. I will:
-   > - Snapshot exact next action + context into `handoff.md`
-   > - Write a permanent note into the Second Brain
-   > - Create a resume reminder  
-   > Which do you prefer?
+   The current model is approaching its limit. Choose a continuity route:
+
+   1. Same-model wait — preserve the exact next action and resume after the supplied
+      reset time.
+   2. Cross-model handoff — preserve the context and continue now in another provider
+      or model.
+   3. Return later — switch temporarily and schedule a return to the original model.
+
+   Auto-run is optional and requires an explicit command. rate-limit-handoff does not
+   guess provider commands or query providers to confirm availability.
 
 3. If user chooses **B** (or any schedule/handoff language):
    - Run (or instruct the user/host to run):
@@ -30,7 +33,21 @@
        --reset-at "HH:MM" \
        --summary "<one precise sentence of remaining work + key files + acceptance criteria>"
      ```
-   - Confirm: "Handoff + Second Brain updated. Resume after reset with `rate-limit-handoff --resume` or just open handoff.md."
+   - Explicit auto-run examples:
+     ```bash
+     rate-limit-handoff --schedule --model codex --reset-at "16:00" \
+       --summary "Continue the verified work" --auto-run \
+       --command 'codex exec "Read handoff.md and continue"'
+     rate-limit-handoff --handoff --from codex --to claude \
+       --summary "Continue now" --auto-run \
+       --command 'claude -p "Read handoff.md and continue"'
+     rate-limit-handoff --handoff --from codex --to claude --return-to codex \
+       --return-at "16:00" --summary "Continue now, then return" --auto-run \
+       --command 'claude -p "Read handoff.md and continue"' \
+       --return-command 'codex exec "Read handoff.md and perform the planned return"'
+     ```
+   - Confirm: "Handoff + Second Brain updated. Resume after reset with
+     `rate-limit-handoff --resume` or just open handoff.md."
    - Do **not** continue heavy work on a degraded model unless the user explicitly overrides.
 
 4. At the **start of every new Codex session** after a known reset:
@@ -45,4 +62,6 @@
 - Local sessions often under `~/.codex/sessions`.
 
 ## Why this skill exists
-Codex burns the 5h window quickly on reasoning-heavy agent work. Scheduling preserves quality and compounds knowledge in the Second Brain instead of forcing a mediocre continuation.
+Codex burns the 5h window quickly on reasoning-heavy agent work. Scheduling preserves
+quality and compounds knowledge in the Second Brain instead of forcing a mediocre
+continuation.

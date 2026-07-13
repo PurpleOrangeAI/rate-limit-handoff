@@ -2,10 +2,12 @@
 
 **Name:** rate-limit-handoff  
 **For:** Google Antigravity / agy CLI  
-**Version:** 0.1.0  
+**Version:** 0.2.1
 
 ## Why this is critical for Antigravity
-agy has extremely high token overhead from system prompts + tools. Quotas (5h refresh + weekly) can disappear in 1–2 hours of real work. Silent degradation or account switching mid-project is painful. Prefer an explicit schedule + handoff.
+agy has extremely high token overhead from system prompts + tools. Quotas (5h refresh
++ weekly) can disappear in 1–2 hours of real work. Silent degradation or account
+switching mid-project is painful. Prefer an explicit schedule + handoff.
 
 ## Behavior
 
@@ -16,11 +18,16 @@ agy has extremely high token overhead from system prompts + tools. Quotas (5h re
 
 2. Immediately offer:
 
-   > Antigravity quota is low / about to hit the 5h wall.  
-   > **A)** Continue on a lighter Gemini model or switch tools now.  
-   > **B)** (strongly recommended) Schedule the exact remaining work for after the reset.  
-   >   I will write everything into `handoff.md` + Second Brain so you can resume cleanly in agy, Claude Code, Codex, or Grok.  
-   > Choose B?
+   The current model is approaching its limit. Choose a continuity route:
+
+   1. Same-model wait — preserve the exact next action and resume after the supplied
+      reset time.
+   2. Cross-model handoff — preserve the context and continue now in another provider
+      or model.
+   3. Return later — switch temporarily and schedule a return to the original model.
+
+   Auto-run is optional and requires an explicit command. rate-limit-handoff does not
+   guess provider commands or query providers to confirm availability.
 
 3. On B:
    ```bash
@@ -28,6 +35,21 @@ agy has extremely high token overhead from system prompts + tools. Quotas (5h re
      --reset-at "HH:MM" \
      --summary "<precise next steps + files that matter + acceptance criteria>"
    ```
+   Explicit auto-run examples (Antigravity commands remain user-supplied):
+   ```bash
+   rate-limit-handoff --schedule --model antigravity --reset-at "16:00" \
+     --summary "Continue the verified work" --auto-run \
+     --command '<explicit user-supplied Antigravity command>'
+   rate-limit-handoff --handoff --from antigravity --to codex \
+     --summary "Continue now" --auto-run \
+     --command 'codex exec "Read handoff.md and continue"'
+   rate-limit-handoff --handoff --from antigravity --to codex \
+     --return-to antigravity --return-at "16:00" \
+     --summary "Continue now, then return" --auto-run \
+     --command 'codex exec "Read handoff.md and continue"' \
+     --return-command '<explicit user-supplied Antigravity return command>'
+   ```
    Confirm and stop. Do not keep burning the remaining quota on low-value loops.
 
-4. Session start rule: if `handoff.md` exists, read it and surface Pending work before doing anything else.
+4. Session start rule: if `handoff.md` exists, read it and surface Pending work before
+   doing anything else.

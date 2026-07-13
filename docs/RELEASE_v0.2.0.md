@@ -1,5 +1,9 @@
 # rate-limit-handoff v0.2.0 — Multi-Model Continuity Engine
 
+> Historical note: v0.2.0 described the intended multi-model interface, but the tagged
+> code did not contain those commands and still reported package version 0.1.0.
+> v0.2.1 is the implementation and release-truth repair.
+
 **Released:** 2026-07-13  
 **Tag:** v0.2.0
 
@@ -30,4 +34,4 @@ rate-limit-handoff --handoff --from claude --to codex \
 
 # Resume with preference
 rate-limit-handoff --resume --prefer claude
-
+```

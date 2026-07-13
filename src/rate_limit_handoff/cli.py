@@ -397,7 +397,7 @@ def _codex_skill() -> str:
 
 **Name:** rate-limit-handoff  
 **For:** OpenAI Codex (CLI, app, or VS Code extension)  
-**Version:** 0.1.0  
+**Version:** 0.2.1
 
 ## When to activate
 - Remaining 5h usage is estimated < 20% (from `/status` or Settings → Usage)
@@ -408,15 +408,18 @@ def _codex_skill() -> str:
 ## Behavior (must follow)
 
 1. **Stop** generating large new diffs or spawning more sub-agents.
-2. Offer exactly this choice (adapt only slightly for tone):
+2. Offer these routes:
 
-   > We're approaching the Codex 5h (or weekly) limit.  
-   > **A)** Fall back to a lighter model (GPT-5.4 / mini) and continue now.  
-   > **B)** (recommended) Schedule the remaining work for the next reset. I will:
-   > - Snapshot exact next action + context into `handoff.md`
-   > - Write a permanent note into the Second Brain
-   > - Create a resume reminder  
-   > Which do you prefer?
+   The current model is approaching its limit. Choose a continuity route:
+
+   1. Same-model wait — preserve the exact next action and resume after the supplied
+      reset time.
+   2. Cross-model handoff — preserve the context and continue now in another provider
+      or model.
+   3. Return later — switch temporarily and schedule a return to the original model.
+
+   Auto-run is optional and requires an explicit command. rate-limit-handoff does not
+   guess provider commands or query providers to confirm availability.
 
 3. If user chooses **B** (or any schedule/handoff language):
    - Run (or instruct the user/host to run):
@@ -424,6 +427,19 @@ def _codex_skill() -> str:
      rate-limit-handoff --schedule --model codex \\
        --reset-at "HH:MM" \\
        --summary "<one precise sentence of remaining work + key files + acceptance criteria>"
+     ```
+   - Explicit auto-run examples:
+     ```bash
+     rate-limit-handoff --schedule --model codex --reset-at "16:00" \\
+       --summary "Continue the verified work" --auto-run \\
+       --command 'codex exec "Read handoff.md and continue"'
+     rate-limit-handoff --handoff --from codex --to claude \\
+       --summary "Continue now" --auto-run \\
+       --command 'claude -p "Read handoff.md and continue"'
+     rate-limit-handoff --handoff --from codex --to claude --return-to codex \\
+       --return-at "16:00" --summary "Continue now, then return" --auto-run \\
+       --command 'claude -p "Read handoff.md and continue"' \\
+       --return-command 'codex exec "Read handoff.md and perform the planned return"'
      ```
    - Confirm: "Handoff + Second Brain updated. Resume after reset with
      `rate-limit-handoff --resume` or just open handoff.md."
@@ -452,7 +468,7 @@ def _grok_skill() -> str:
 
 **Name:** rate-limit-handoff  
 **For:** Grok Build CLI / xAI Grok Build surfaces + Hermes  
-**Version:** 0.1.0  
+**Version:** 0.2.1
 
 ## Core instruction (add to Grok Build system prompt or project rules)
 
@@ -465,11 +481,16 @@ API 429s, or user mentions limit / schedule / handoff):
 1. Pause heavy generation.
 2. Offer:
 
-   > Capacity is getting low on Grok Build / current model.  
-   > **A)** Switch to a lighter Grok variant or another tool and continue.  
-   > **B)** (preferred) Schedule remaining work for the next available full-power window.  
-   >   I will update `handoff.md` + Second Brain and create a resume point.  
-   > Prefer B?
+   The current model is approaching its limit. Choose a continuity route:
+
+   1. Same-model wait — preserve the exact next action and resume after the supplied
+      reset time.
+   2. Cross-model handoff — preserve the context and continue now in another provider
+      or model.
+   3. Return later — switch temporarily and schedule a return to the original model.
+
+   Auto-run is optional and requires an explicit command. rate-limit-handoff does not
+   guess provider commands or query providers to confirm availability.
 
 3. On schedule (B):
    ```bash
@@ -477,7 +498,20 @@ API 429s, or user mentions limit / schedule / handoff):
      --reset-at "HH:MM" \\
      --summary "<precise remaining task + critical context>"
    ```
-   Confirm the handoff was written, then stop.
+   Explicit auto-run examples (Grok commands remain user-supplied):
+   ```bash
+   rate-limit-handoff --schedule --model grok-build --reset-at "16:00" \\
+     --summary "Continue the verified work" --auto-run \\
+     --command '<explicit user-supplied Grok command>'
+   rate-limit-handoff --handoff --from grok-build --to codex \\
+     --summary "Continue now" --auto-run \\
+     --command 'codex exec "Read handoff.md and continue"'
+   rate-limit-handoff --handoff --from grok-build --to codex --return-to grok-build \\
+     --return-at "16:00" --summary "Continue now, then return" --auto-run \\
+     --command 'codex exec "Read handoff.md and continue"' \\
+     --return-command '<explicit user-supplied Grok return command>'
+   ```
+   Confirm the handoff was written before any command runs.
 
 4. On new session start: always check `handoff.md` first and continue from the Pending
    section if present.
@@ -494,7 +528,7 @@ def _agy_skill() -> str:
 
 **Name:** rate-limit-handoff  
 **For:** Google Antigravity / agy CLI  
-**Version:** 0.1.0  
+**Version:** 0.2.1
 
 ## Why this is critical for Antigravity
 agy has extremely high token overhead from system prompts + tools. Quotas (5h refresh
@@ -510,18 +544,36 @@ switching mid-project is painful. Prefer an explicit schedule + handoff.
 
 2. Immediately offer:
 
-   > Antigravity quota is low / about to hit the 5h wall.  
-   > **A)** Continue on a lighter Gemini model or switch tools now.  
-   > **B)** (strongly recommended) Schedule the exact remaining work for after the reset.  
-   >   I will write everything into `handoff.md` + Second Brain so you can resume
-   >   cleanly in agy, Claude Code, Codex, or Grok.
-   > Choose B?
+   The current model is approaching its limit. Choose a continuity route:
+
+   1. Same-model wait — preserve the exact next action and resume after the supplied
+      reset time.
+   2. Cross-model handoff — preserve the context and continue now in another provider
+      or model.
+   3. Return later — switch temporarily and schedule a return to the original model.
+
+   Auto-run is optional and requires an explicit command. rate-limit-handoff does not
+   guess provider commands or query providers to confirm availability.
 
 3. On B:
    ```bash
    rate-limit-handoff --schedule --model antigravity \\
      --reset-at "HH:MM" \\
      --summary "<precise next steps + files that matter + acceptance criteria>"
+   ```
+   Explicit auto-run examples (Antigravity commands remain user-supplied):
+   ```bash
+   rate-limit-handoff --schedule --model antigravity --reset-at "16:00" \\
+     --summary "Continue the verified work" --auto-run \\
+     --command '<explicit user-supplied Antigravity command>'
+   rate-limit-handoff --handoff --from antigravity --to codex \\
+     --summary "Continue now" --auto-run \\
+     --command 'codex exec "Read handoff.md and continue"'
+   rate-limit-handoff --handoff --from antigravity --to codex \\
+     --return-to antigravity --return-at "16:00" \\
+     --summary "Continue now, then return" --auto-run \\
+     --command 'codex exec "Read handoff.md and continue"' \\
+     --return-command '<explicit user-supplied Antigravity return command>'
    ```
    Confirm and stop. Do not keep burning the remaining quota on low-value loops.
 
@@ -534,7 +586,7 @@ def _general_skill() -> str:
     return """# General Auto-Detect Limits Skill (any frontend)
 
 **Name:** auto-detect-rate-limits  
-**Version:** 0.1.0  
+**Version:** 0.2.1
 **Applies to:** Claude Code, Codex, Cursor, Hermes, Grok Build, Antigravity, custom agents
 
 ## Detection heuristics (proactive)
@@ -553,15 +605,16 @@ Trigger the schedule offer when **any** of these are true:
 
 ## Canonical offer text (copy-paste ready)
 
-```
-We're getting close to the limit on this model/tool.
-Option A — Switch to the fallback / lighter model right now and keep going.
-Option B (recommended) — Schedule the remaining work for the next 5-hour (or weekly) reset. I will:
-- Snapshot everything into handoff.md
-- Write a permanent note into the Second Brain
-- Create a resume reminder for after the reset
-Which do you prefer?
-```
+The current model is approaching its limit. Choose a continuity route:
+
+1. Same-model wait — preserve the exact next action and resume after the supplied
+   reset time.
+2. Cross-model handoff — preserve the context and continue now in another provider
+   or model.
+3. Return later — switch temporarily and schedule a return to the original model.
+
+Auto-run is optional and requires an explicit command. rate-limit-handoff does not
+guess provider commands or query providers to confirm availability.
 
 ## On schedule (B)
 
@@ -572,6 +625,22 @@ rate-limit-handoff --schedule \\
   --model <claude|codex|grok|grok-build|antigravity|cursor> \\
   --reset-at "HH:MM" \\
   --summary "<one precise sentence of what still needs to be done + key files + done-when criteria>"
+```
+
+The general skill uses the same executable examples as the README:
+
+```bash
+rate-limit-handoff --schedule --model claude --reset-at "16:00" \\
+  --summary "Continue the verified release work" --auto-run \\
+  --command 'claude -p "Read handoff.md and continue the exact next action"'
+rate-limit-handoff --handoff --from claude --to codex \\
+  --summary "Continue from the active handoff chain" --auto-run \\
+  --command 'codex exec "Read handoff.md and continue the exact next action"'
+rate-limit-handoff --handoff --from claude --to codex --return-to claude \\
+  --return-at "16:00" \\
+  --summary "Use Codex now, then return for the final review" --auto-run \\
+  --command 'codex exec "Read handoff.md and continue"' \\
+  --return-command 'claude -p "Read handoff.md and perform the planned return"'
 ```
 
 Then confirm and **stop heavy work**.

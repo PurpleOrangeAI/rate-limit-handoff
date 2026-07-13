@@ -1,7 +1,7 @@
 # General Auto-Detect Limits Skill (any frontend)
 
 **Name:** auto-detect-rate-limits  
-**Version:** 0.1.0  
+**Version:** 0.2.1
 **Applies to:** Claude Code, Codex, Cursor, Hermes, Grok Build, Antigravity, custom agents
 
 ## Detection heuristics (proactive)
@@ -9,8 +9,10 @@
 Trigger the schedule offer when **any** of these are true:
 
 - Remaining capacity estimates < 15–20% of current window
-- Explicit user language: "almost out", "hitting limit", "2 hours left", "schedule for later", "handoff", "don't want to drop to 5.4"
-- Tool/UI messages containing: "rate limit", "usage limit", "quota reached", "resets in", "5h limit", "weekly limit"
+- Explicit user language: "almost out", "hitting limit", "2 hours left",
+  "schedule for later", "handoff", "don't want to drop to 5.4"
+- Tool/UI messages containing: "rate limit", "usage limit", "quota reached",
+  "resets in", "5h limit", "weekly limit"
 - For Codex: after seeing `/status` with low %
 - For Antigravity: after `/context` or "Resets in XhYmZs"
 - For API/Hermes: 429 responses or remaining-token headers approaching zero
@@ -18,15 +20,16 @@ Trigger the schedule offer when **any** of these are true:
 
 ## Canonical offer text (copy-paste ready)
 
-```
-We're getting close to the limit on this model/tool.
-Option A — Switch to the fallback / lighter model right now and keep going.
-Option B (recommended) — Schedule the remaining work for the next 5-hour (or weekly) reset. I will:
-- Snapshot everything into handoff.md
-- Write a permanent note into the Second Brain
-- Create a resume reminder for after the reset
-Which do you prefer?
-```
+The current model is approaching its limit. Choose a continuity route:
+
+1. Same-model wait — preserve the exact next action and resume after the supplied
+   reset time.
+2. Cross-model handoff — preserve the context and continue now in another provider
+   or model.
+3. Return later — switch temporarily and schedule a return to the original model.
+
+Auto-run is optional and requires an explicit command. rate-limit-handoff does not
+guess provider commands or query providers to confirm availability.
 
 ## On schedule (B)
 
@@ -39,11 +42,29 @@ rate-limit-handoff --schedule \
   --summary "<one precise sentence of what still needs to be done + key files + done-when criteria>"
 ```
 
+The general skill uses the same executable examples as the README:
+
+```bash
+rate-limit-handoff --schedule --model claude --reset-at "16:00" \
+  --summary "Continue the verified release work" --auto-run \
+  --command 'claude -p "Read handoff.md and continue the exact next action"'
+rate-limit-handoff --handoff --from claude --to codex \
+  --summary "Continue from the active handoff chain" --auto-run \
+  --command 'codex exec "Read handoff.md and continue the exact next action"'
+rate-limit-handoff --handoff --from claude --to codex --return-to claude \
+  --return-at "16:00" \
+  --summary "Use Codex now, then return for the final review" --auto-run \
+  --command 'codex exec "Read handoff.md and continue"' \
+  --return-command 'claude -p "Read handoff.md and perform the planned return"'
+```
+
 Then confirm and **stop heavy work**.
 
 ## Session start rule (all tools)
 
-If `handoff.md` exists in the workspace or Second Brain root → read it first and continue from Pending / Next Exact Action. Prefer full-power model after reset.
+If `handoff.md` exists in the workspace or Second Brain root → read it first and
+continue from Pending / Next Exact Action. Prefer full-power model after reset.
 
 ## Why
-Rate limits become high-quality forced checkpoints instead of quality-destroying interruptions. Knowledge compounds in the Second Brain every time you schedule.
+Rate limits become high-quality forced checkpoints instead of quality-destroying
+interruptions. Knowledge compounds in the Second Brain every time you schedule.

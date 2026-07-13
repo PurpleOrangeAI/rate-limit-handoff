@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "rate-limit-handoff"
-version = "0.1.0"
+version = "0.2.1"
 description = "Turn AI rate limits into high-quality checkpoints. Schedule work across Claude Code, Codex, Grok Build, Antigravity & more. Auto-update your Second Brain + handoff.md."
 readme = "README.md"
 requires-python = ">=3.10"

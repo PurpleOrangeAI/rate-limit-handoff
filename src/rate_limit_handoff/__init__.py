@@ -9,7 +9,7 @@ Antigravity (agy), Cursor, Hermes and more. Automatically update your
 Second Brain + living handoff.md so context never evaporates.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.1"
 __author__ = "Purple Orange AI"
 
 from .models import MODELS, ModelInfo

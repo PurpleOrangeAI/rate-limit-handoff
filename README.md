@@ -5,9 +5,9 @@
 </p>
 
 <p align="center">
-  <strong>Turn AI rate limits into high-quality checkpoints.</strong><br>
-  Schedule remaining work across Claude Code • Codex • Grok Build • Antigravity • Cursor • Hermes.<br>
-  Auto-update your Second Brain + living <code>handoff.md</code> so context never evaporates.
+  <strong>Rate limits are a continuity problem.</strong><br>
+  Wait for the same model, continue now in another model, or switch and return later.<br>
+  Preserve the exact next action in a living <code>handoff.md</code> so context never evaporates.
 </p>
 
 <p align="center">
@@ -21,31 +21,32 @@
 
 ## Why this exists
 
-You hit the 5-hour wall on Claude Code or Codex at 1:50 AM.  
-Reset is at 4:00 AM.  
+A serious AI session accumulates decisions, rejected paths, repository state, test
+evidence, constraints, and one exact next action. When the current model hits a limit,
+chat history alone is not a reliable operating state.
 
-Most people either:
-- Wait idle (lose flow), or  
-- Drop to a weaker model (5.4 / mini / Flash) and produce lower-quality work.
+**rate-limit-handoff** gives you three explicit continuity routes:
 
-**rate-limit-handoff** gives you a third option:
+1. **Same-model wait** — preserve the work and wait for the supplied reset time, with
+   optional explicit auto-run when the same model is expected to be available.
+2. **Cross-model handoff** — preserve the context and continue immediately in another
+   provider or model.
+3. **Return later** — switch temporarily, then schedule a return to the original model.
 
-> **Schedule** the exact remaining work for the moment the limit re-opens.  
-> Snapshot everything into a living `handoff.md` + a permanent Second Brain note.  
-> Resume cleanly with full power.
-
-Rate limits stop being interruptions and become **forced high-quality checkpoints** that compound knowledge.
+Every route writes the durable context first. Context stops evaporating; knowledge
+compounds.
 
 ---
 
 ## Features
 
 - **Multi-tool by design** — Claude Code, OpenAI Codex, Grok Build, Antigravity (agy), Cursor, Hermes
-- **Proactive offer** — skills/rules that make the AI itself offer the schedule choice when capacity is low
+- **Proactive offer** — skills/rules that present the three continuity routes when capacity is low
 - **One living handoff.md** — single source of truth that works across tools and machines
 - **Second Brain integration** — every schedule automatically writes a dated note so knowledge compounds
 - **Usage parsers** — paste `/status` or dashboard text; extracts remaining % and reset hint
-- **Best-effort local jobs** — creates `at`/cron-friendly resume scripts + desktop notifications
+- **Explicit local auto-run** — executes only user-supplied commands, parsed into arguments with `shell=False`
+- **Best-effort local jobs** — detached runners and reminder artifacts are local, not reboot-durable services
 - **Zero heavy deps** — pure Python stdlib, works offline
 - **MIT licensed** — use it, fork it, ship it inside your company
 
@@ -54,7 +55,7 @@ Rate limits stop being interruptions and become **forced high-quality checkpoint
 ## Quick Start
 
 ```bash
-# Install from GitHub while the first PyPI release is pending
+# Install from GitHub
 pip install git+https://github.com/PurpleOrangeAI/rate-limit-handoff.git
 
 # Or install from source for development
@@ -62,6 +63,8 @@ git clone https://github.com/PurpleOrangeAI/rate-limit-handoff.git
 cd rate-limit-handoff
 pip install -e .
 ```
+
+The first PyPI release is pending. There is no PyPI installation command yet.
 
 ### 1. Bootstrap a workspace (once)
 ```bash
@@ -86,21 +89,70 @@ When the supplied root already contains `00 Inbox/` and `10 Projects/`, the CLI 
 notes to `00 Inbox/` and uses `10 Projects/ai-rate-limit-handoff/` for the project entry.
 Otherwise it preserves the portable `inbox/` and `projects/` layout.
 
-### 2. When you are about to hit a limit
+### 2. Choose a continuity route
+
+#### Same-model wait
+
 ```bash
 rate-limit-handoff --schedule \
-  --reset-at "04:00" \
-  --model codex \
-  --summary "Finish agent swarm on feature X, open PRs, update tests"
+  --model claude \
+  --reset-at "16:00" \
+  --summary "Continue the verified release work" \
+  --auto-run \
+  --command 'claude -p "Read handoff.md and continue the exact next action"'
 ```
 
-### 3. After the reset
+Omit `--auto-run` and `--command` to create the durable handoff and best-effort local
+reminder/resume artifact without executing a model command.
+
+#### Immediate cross-model handoff
+
 ```bash
-rate-limit-handoff --resume
-# or just open handoff.md in Claude/Codex/Grok/agy and say "continue from handoff"
+rate-limit-handoff --handoff \
+  --from claude \
+  --to codex \
+  --summary "Continue from the active handoff chain" \
+  --auto-run \
+  --command 'codex exec "Read handoff.md and continue the exact next action"'
 ```
+
+#### Temporary switch with planned return
+
+```bash
+rate-limit-handoff --handoff \
+  --from claude \
+  --to codex \
+  --return-to claude \
+  --return-at "16:00" \
+  --summary "Use Codex now, then return for the final review" \
+  --auto-run \
+  --command 'codex exec "Read handoff.md and continue"' \
+  --return-command 'claude -p "Read handoff.md and perform the planned return"'
+```
+
+#### Resume with a preference
+
+```bash
+rate-limit-handoff --resume --prefer claude
+```
+
+`--prefer` changes the continuation instruction. It does not launch that model.
+
+### Auto-run truth boundary
+
+Auto-run is opt-in. rate-limit-handoff executes only the explicit command you supply,
+parses it into arguments, and launches it with shell=False.
+
+The supplied reset time is the availability signal. v0.2.1 does not query provider
+APIs to confirm that capacity has returned, does not guess provider CLI syntax, and
+does not guarantee that a detached local job survives a machine reboot. This means
+there is no live provider-availability detection.
+
+Without --auto-run, scheduling remains a durable handoff plus a best-effort local
+reminder/resume artifact.
 
 ### Extra power
+
 ```bash
 # Parse Codex /status or any dashboard paste
 rate-limit-handoff --parse-usage "5h limit: 12% left (resets 04:00)"
@@ -116,8 +168,8 @@ rate-limit-handoff --status --model antigravity
 
 ## Supported Tools
 
-| Tool | Window style | Detection | Fallback |
-|------|--------------|-----------|----------|
+| Tool | Window style | Operator-supplied capacity signal | Possible destination |
+|------|--------------|-----------------------------------|----------------------|
 | **Claude Code** | 5h + weekly | UI countdown / % | lighter Claude / Haiku |
 | **OpenAI Codex** | 5h + weekly (reasoning heavy) | `/status`, Settings → Usage | GPT-5.4 / mini |
 | **Grok Build** | Usage % + API | CLI / console | lighter Grok |
@@ -146,7 +198,8 @@ After `--init` you get ready-to-use skills in `second_brain/system/skills/`:
 - Cursor Rules (`.cursor/rules`)
 - Continue.dev / any multi-model frontend
 
-They make the AI itself detect low capacity and offer the schedule choice automatically.
+They make the AI respond to low-capacity signals by offering the three continuity
+routes. They do not add live provider-availability detection.
 
 ---
 
@@ -154,8 +207,8 @@ They make the AI itself detect low capacity and offer the schedule choice automa
 
 ```
 ┌─────────────────┐     low capacity      ┌──────────────────────┐
-│  Any AI Session │ ───────────────────►  │  Offer: Schedule?    │
-│  Claude / Codex │                       │  or Fall back        │
+│  Any AI Session │ ───────────────────►  │ Wait / hand off /    │
+│  Claude / Codex │                       │ switch and return    │
 │  Grok / agy /   │                       └──────────┬───────────┘
 │  Cursor / etc   │                                  │ yes
 └─────────────────┘                                  ▼
@@ -164,11 +217,11 @@ They make the AI itself detect low capacity and offer the schedule choice automa
 │  (living state) │                       │  + Second Brain note │
 └─────────────────┘                       └──────────┬───────────┘
                                                      │
-                                                     │ schedule
+                                                     │ explicit command
                                                      ▼
                                           ┌──────────────────────┐
-                                          │  at / cron / script  │
-                                          │  desktop notif       │
+                                          │ best-effort local job│
+                                          │ or reminder artifact │
                                           └──────────────────────┘
 ```
 
@@ -176,7 +229,7 @@ They make the AI itself detect low capacity and offer the schedule choice automa
 
 ## Design Philosophy
 
-1. **Prefer schedule over silent fallback** — quality > speed when the work matters.
+1. **Prefer schedule / handoff over silent fallback** — make the routing decision explicit.
 2. **Always write to both** handoff.md **and** a dated Second Brain note — knowledge compounds.
 3. **Model-agnostic** — the same workflow works whether you live in Claude Code, Codex, or rotate between them.
 4. **Zero magic, full control** — pure Python, no telemetry, no cloud, no accounts.
