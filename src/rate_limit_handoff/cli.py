@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 
 from . import __version__
+from .runner import parse_command
 from .scheduler import LimitScheduler
 
 
@@ -20,8 +21,18 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  rate-limit-handoff --schedule --reset-at "04:00" --model codex \\
-      --summary "Finish agent swarm + open PRs"
+  rate-limit-handoff --schedule --model claude --reset-at "16:00" \\
+      --summary "Continue the verified release work" --auto-run \\
+      --command 'claude -p "Read handoff.md and continue the exact next action"'
+
+  rate-limit-handoff --handoff --from claude --to codex \\
+      --summary "Continue from the active handoff chain" --auto-run \\
+      --command 'codex exec "Read handoff.md and continue the exact next action"'
+
+  rate-limit-handoff --handoff --from claude --to codex --return-to claude \\
+      --return-at "16:00" --summary "Use Codex now, then return for final review" \\
+      --auto-run --command 'codex exec "Read handoff.md and continue"' \\
+      --return-command 'claude -p "Read handoff.md and perform the planned return"'
 
   rate-limit-handoff --resume
 
@@ -36,7 +47,10 @@ Examples:
     )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
 
-    # Commands (mutually exclusive group would be nicer but keep simple flags for UX)
+    # Commands
+    parser.add_argument(
+        "--handoff", action="store_true", help="Hand off work to another model"
+    )
     parser.add_argument(
         "--schedule", action="store_true", help="Schedule remaining work for reset time"
     )
@@ -84,6 +98,25 @@ Examples:
         help="Model/tool: claude | codex | grok | grok-build | antigravity | cursor",
     )
     parser.add_argument(
+        "--from", dest="from_model", help="Model currently holding the work"
+    )
+    parser.add_argument("--to", dest="to_model", help="Destination model for a handoff")
+    parser.add_argument("--return-to", help="Original model for a planned return")
+    parser.add_argument("--return-at", help="Time for the planned return")
+    parser.add_argument("--prefer", help="Preferred model when resuming")
+    parser.add_argument(
+        "--auto-run",
+        action="store_true",
+        help="Execute only the explicit command supplied for the selected route",
+    )
+    parser.add_argument(
+        "--command", help="Explicit destination command; parsed without a shell"
+    )
+    parser.add_argument(
+        "--return-command",
+        help="Explicit command to execute at the planned return time",
+    )
+    parser.add_argument(
         "--workspace",
         type=str,
         default=None,
@@ -104,9 +137,74 @@ Examples:
     return parser
 
 
+def validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
+    primary_actions = (
+        args.handoff,
+        args.schedule,
+        args.resume,
+        args.status,
+        args.update_only,
+        args.codex_status,
+        args.parse_usage is not None,
+        args.init,
+    )
+    if sum(primary_actions) > 1:
+        parser.error("only one primary action may be supplied")
+
+    if args.handoff:
+        if not args.from_model:
+            parser.error("--handoff requires --from")
+        if not args.to_model:
+            parser.error("--handoff requires --to")
+        if not args.summary or not args.summary.strip():
+            parser.error("--handoff requires a non-empty --summary")
+
+    if bool(args.return_to) != bool(args.return_at):
+        parser.error("--return-to and --return-at must be supplied together")
+    if (args.return_to or args.return_at) and not args.handoff:
+        parser.error("planned return options require --handoff")
+    if (args.from_model or args.to_model) and not args.handoff:
+        parser.error("--from and --to require --handoff")
+    if args.return_command and not args.return_to:
+        parser.error("--return-command requires --return-to")
+
+    if args.prefer and not args.resume:
+        parser.error("--prefer requires --resume")
+
+    if (args.command or args.return_command) and not args.auto_run:
+        parser.error("--command and --return-command require --auto-run")
+
+    if args.auto_run:
+        if args.schedule and not args.command:
+            parser.error("--schedule --auto-run requires --command")
+        if args.handoff and not args.command:
+            parser.error("--handoff --auto-run requires --command")
+        if args.return_to and not args.return_command:
+            parser.error("planned return auto-run requires --return-command")
+        if not args.schedule and not args.handoff:
+            parser.error("--auto-run requires --schedule or --handoff")
+
+
+def _parse_command_arg(
+    parser: argparse.ArgumentParser, option: str, command: str | None
+) -> list[str] | None:
+    if command is None:
+        return None
+    try:
+        return parse_command(command)
+    except ValueError as error:
+        parser.error(f"{option}: {error}")
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
+    validate_args(parser, args)
+
+    command_argv = _parse_command_arg(parser, "--command", args.command)
+    return_command_argv = _parse_command_arg(
+        parser, "--return-command", args.return_command
+    )
 
     workspace = Path(args.workspace).resolve() if args.workspace else Path.cwd()
     second_brain_root = Path(args.second_brain_root).resolve() if args.second_brain_root else None
@@ -115,15 +213,30 @@ def main(argv: list[str] | None = None) -> int:
     if args.init:
         return cmd_init(sched)
 
+    if args.handoff:
+        return sched.handoff(
+            summary=args.summary,
+            from_model=args.from_model,
+            to_model=args.to_model,
+            return_to=args.return_to,
+            return_at=args.return_at,
+            auto_run=args.auto_run,
+            command_argv=command_argv,
+            return_command_argv=return_command_argv,
+        )
+
     if args.schedule:
         summary = args.summary or "Continue previous work from handoff.md (no summary provided)"
-        model = args.model or "unknown"
-        sched.schedule(summary=summary, reset_at=args.reset_at, model=model)
-        return 0
+        return sched.schedule(
+            summary=summary,
+            reset_at=args.reset_at,
+            model=args.model or "unknown",
+            auto_run=args.auto_run,
+            command_argv=command_argv,
+        )
 
     if args.resume:
-        sched.resume()
-        return 0
+        return sched.resume(prefer=args.prefer)
 
     if args.status:
         sched.status(model=args.model)
