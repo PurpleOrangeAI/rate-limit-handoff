@@ -4,11 +4,11 @@
 > code did not contain those commands and still reported package version 0.1.0.
 > v0.2.1 is the implementation and release-truth repair.
 
-**Released:** 2026-07-13  
+**Released:** 2026-07-13
 **Tag:** v0.2.0
 
 ## Headline
-Rate limits are no longer dead ends.  
+Rate limits are no longer dead ends.
 They are now routing decisions.
 
 ## What’s new
