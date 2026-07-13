@@ -77,17 +77,13 @@ class LimitScheduler:
             return target
 
         at_str = at_str.strip()
-        try:
-            if len(at_str) <= 5 and ":" in at_str:  # HH:MM
-                h, m = map(int, at_str.split(":"))
-                target = n.replace(hour=h, minute=m, second=0, microsecond=0)
-                if target <= n:
-                    target += dt.timedelta(days=1)
-                return target
-            return dt.datetime.fromisoformat(at_str)
-        except Exception as e:
-            print(f"[warn] Could not parse --reset-at '{at_str}': {e}. Falling back to default.")
-            return self.next_reset(None)
+        if len(at_str) <= 5 and ":" in at_str:  # HH:MM
+            h, m = map(int, at_str.split(":"))
+            target = n.replace(hour=h, minute=m, second=0, microsecond=0)
+            if target <= n:
+                target += dt.timedelta(days=1)
+            return target
+        return dt.datetime.fromisoformat(at_str)
 
     def ensure_dirs(self) -> None:
         for d in (self.inbox, self.projects, self.logs, self.handoff_path.parent, self.skills):
@@ -372,6 +368,7 @@ class LimitScheduler:
             )
 
         reset_dt = self.next_reset(reset_at)
+        model = model.lower()
         print(
             f"Scheduling for: {reset_dt.strftime('%Y-%m-%d %H:%M')}  "
             f"(in {(reset_dt - self.now()).total_seconds() / 60:.0f} min)  model={model}"
@@ -399,17 +396,22 @@ class LimitScheduler:
 
         assert command_argv is not None
         resumed = replace(waiting, status="resumed", updated_at=reset_dt)
-        job_path = create_job(
-            logs_path=self.logs,
-            workspace=self.workspace,
-            mode="same",
-            model=model,
-            run_at=reset_dt,
-            argv=command_argv,
-            transition=resumed,
-            now=self.now,
-        )
-        pid = spawn_waiting_job(job_path)
+        try:
+            job_path = create_job(
+                logs_path=self.logs,
+                workspace=self.workspace,
+                mode="same",
+                model=model,
+                run_at=reset_dt,
+                argv=command_argv,
+                transition=resumed,
+                now=self.now,
+            )
+            pid = spawn_waiting_job(job_path)
+        except Exception:
+            failed = replace(waiting, status="auto_run_failed", updated_at=self.now())
+            self.continuity.record(failed, event="auto_run_failed")
+            raise
         print(f"[ok] Auto-run job: {job_path} (pid {pid})")
         print("[info] Detached local jobs are best-effort and are not reboot durable.")
         return 0
@@ -439,22 +441,25 @@ class LimitScheduler:
                     "planned return auto-run requires an explicit return command",
                 )
 
+        source = from_model.lower()
+        destination = to_model.lower()
+        return_model = return_to.lower() if return_to else None
         return_dt = self.next_reset(return_at) if return_at else None
         created_at = self.now()
         state = HandoffState(
-            mode="return" if return_to else "cross",
-            source_model=from_model,
-            current_model=to_model,
+            mode="return" if return_model else "cross",
+            source_model=source,
+            current_model=destination,
             summary=summary,
-            status="temporary" if return_to else "handed_off",
+            status="temporary" if return_model else "handed_off",
             created_at=created_at,
             updated_at=created_at,
-            return_to=return_to,
+            return_to=return_model,
             return_at=return_dt,
         )
         self.continuity.record(
             state,
-            event="planned_return" if return_to else "cross_handoff",
+            event="planned_return" if return_model else "cross_handoff",
         )
         self.write_continuity_note(state)
 
@@ -463,39 +468,53 @@ class LimitScheduler:
             return 0
 
         assert command_argv is not None
-        if return_to and return_dt:
+        if return_model and return_dt:
             assert return_command_argv is not None
             returned = replace(
                 state,
-                current_model=return_to,
+                current_model=return_model,
                 status="returned",
                 updated_at=return_dt,
             )
-            return_job = create_job(
-                logs_path=self.logs,
-                workspace=self.workspace,
-                mode="return",
-                model=return_to,
-                run_at=return_dt,
-                argv=return_command_argv,
-                transition=returned,
-                now=self.now,
-            )
-            pid = spawn_waiting_job(return_job)
+            try:
+                return_job = create_job(
+                    logs_path=self.logs,
+                    workspace=self.workspace,
+                    mode="return",
+                    model=return_model,
+                    run_at=return_dt,
+                    argv=return_command_argv,
+                    transition=returned,
+                    now=self.now,
+                )
+                pid = spawn_waiting_job(return_job)
+            except Exception:
+                failed = replace(state, status="auto_run_failed", updated_at=self.now())
+                self.continuity.record(failed, event="auto_run_failed")
+                raise
             print(f"[ok] Planned return job: {return_job} (pid {pid})")
             print("[info] Detached local jobs are best-effort and are not reboot durable.")
 
-        immediate_job = create_job(
-            logs_path=self.logs,
-            workspace=self.workspace,
-            mode="cross",
-            model=to_model,
-            run_at=created_at,
-            argv=command_argv,
-            transition=None,
-            now=self.now,
-        )
-        return execute_job(immediate_job, wait=False)
+        try:
+            immediate_job = create_job(
+                logs_path=self.logs,
+                workspace=self.workspace,
+                mode="cross",
+                model=destination,
+                run_at=created_at,
+                argv=command_argv,
+                transition=None,
+                now=self.now,
+            )
+            result = execute_job(immediate_job, wait=False)
+        except Exception:
+            failed = replace(state, status="destination_failed", updated_at=self.now())
+            self.continuity.record(failed, event="destination_failed")
+            raise
+        if result != 0:
+            failed = replace(state, status="destination_failed", updated_at=self.now())
+            self.continuity.record(failed, event="destination_failed")
+        return result
 
     @staticmethod
     def _validate_explicit_command(command_argv: list[str] | None, message: str) -> None:
