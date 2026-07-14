@@ -78,6 +78,44 @@ def test_record_replaces_one_active_chain_block(tmp_path):
     assert "Finish the v0.2.1 release" in content
 
 
+def test_record_escapes_multiline_marker_fields_without_changing_state(tmp_path):
+    marker_text = f"before\r{ACTIVE_START}\ninside\r\n{ACTIVE_END}\nafter"
+    state = make_state(
+        source_model=f"source {marker_text}",
+        current_model=f"current {marker_text}",
+        summary=f"summary {marker_text}",
+        return_to=f"return {marker_text}",
+        preferred_model=f"preferred {marker_text}",
+    )
+    store = ContinuityStore(tmp_path, now=lambda: NOW)
+
+    store.record(state, event="hostile_fields_first")
+    store.record(state, event="hostile_fields_second")
+
+    content = store.handoff_path.read_text(encoding="utf-8")
+    assert content.count(ACTIVE_START) == 1
+    assert content.count(ACTIVE_END) == 1
+    assert content.index(ACTIVE_START) < content.index(ACTIVE_END)
+    assert "&lt;!-- rlh:active-chain:start --&gt;" in content
+    assert "&lt;!-- rlh:active-chain:end --&gt;" in content
+    active_block = content[content.index(ACTIVE_START) : content.index(ACTIVE_END)]
+    rendered_marker_text = (
+        "before &lt;!-- rlh:active-chain:start --&gt; inside "
+        "&lt;!-- rlh:active-chain:end --&gt; after"
+    )
+    assert f"- Source model: source {rendered_marker_text}" in active_block.splitlines()
+    assert f"- Current model: current {rendered_marker_text}" in active_block.splitlines()
+    assert f"- Summary: summary {rendered_marker_text}" in active_block.splitlines()
+    assert f"- Return to: return {rendered_marker_text}" in active_block.splitlines()
+    assert (
+        f"- Preferred resume model: preferred {rendered_marker_text}"
+        in active_block.splitlines()
+    )
+    assert store.load() == state
+    active_json = json.loads(store.active_state_path.read_text(encoding="utf-8"))
+    assert active_json == state.to_dict()
+
+
 def test_record_collapses_duplicate_complete_active_chain_blocks(tmp_path):
     old_block = (
         f"{ACTIVE_START}\n"

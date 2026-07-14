@@ -72,9 +72,10 @@ def _required_datetime(data: dict[str, object], field: str) -> dt.datetime:
     if not isinstance(value, str):
         raise ValueError(f"job {field} must be an ISO-8601 datetime string")
     try:
-        return dt.datetime.fromisoformat(value)
+        parsed = dt.datetime.fromisoformat(value)
     except ValueError as error:
         raise ValueError(f"job {field} must be a valid ISO-8601 datetime") from error
+    return _require_naive_datetime(parsed, field)
 
 
 def _optional_datetime(data: dict[str, object], field: str) -> None:
@@ -84,9 +85,16 @@ def _optional_datetime(data: dict[str, object], field: str) -> None:
     if not isinstance(value, str):
         raise ValueError(f"job {field} must be an ISO-8601 datetime string or null")
     try:
-        dt.datetime.fromisoformat(value)
+        parsed = dt.datetime.fromisoformat(value)
     except ValueError as error:
         raise ValueError(f"job {field} must be a valid ISO-8601 datetime") from error
+    _require_naive_datetime(parsed, field)
+
+
+def _require_naive_datetime(value: dt.datetime, field: str) -> dt.datetime:
+    if value.tzinfo is not None and value.utcoffset() is not None:
+        raise ValueError(f"job {field} must use local time without a UTC offset")
+    return value
 
 
 def _validate_job(
@@ -148,8 +156,29 @@ def _validate_job(
 def _load_job(
     path: Path,
 ) -> tuple[dict[str, object], dt.datetime, Path, list[str], HandoffState | None]:
+    return _validate_job(_read_job_object(path))
+
+
+def _read_job_object(path: Path) -> dict[str, object]:
     decoded: object = json.loads(path.read_text(encoding="utf-8"))
-    return _validate_job(decoded)
+    if not isinstance(decoded, dict) or not all(isinstance(key, str) for key in decoded):
+        raise ValueError("job must be a JSON object with string keys")
+    return cast(dict[str, object], decoded)
+
+
+def _persist_pre_execution_failure(
+    path: Path,
+    data: dict[str, object],
+    error: Exception,
+    clock: Callable[[], dt.datetime],
+) -> int:
+    exit_code = 1
+    data["status"] = "failed"
+    data["exit_code"] = exit_code
+    data["error"] = str(error)
+    data["finished_at"] = clock().isoformat()
+    _write_job(path, data)
+    return exit_code
 
 
 def create_job(
@@ -165,9 +194,11 @@ def create_job(
 ) -> Path:
     if not argv:
         raise ValueError("command cannot be empty")
+    _require_naive_datetime(run_at, "run_at")
+    created_at = _require_naive_datetime(now(), "created_at")
     jobs_path = Path(logs_path).resolve() / "jobs"
     jobs_path.mkdir(parents=True, exist_ok=True)
-    job_id = f"{now().strftime('%Y%m%dT%H%M%S')}-{uuid.uuid4().hex[:8]}"
+    job_id = f"{created_at.strftime('%Y%m%dT%H%M%S')}-{uuid.uuid4().hex[:8]}"
     path = jobs_path / f"{job_id}.json"
     data: dict[str, object] = {
         "schema_version": 1,
@@ -178,7 +209,7 @@ def create_job(
         "run_at": run_at.isoformat(),
         "argv": argv,
         "status": "pending",
-        "created_at": now().isoformat(),
+        "created_at": created_at.isoformat(),
         "started_at": None,
         "finished_at": None,
         "exit_code": None,
@@ -199,7 +230,11 @@ def execute_job(
     clock: Callable[[], dt.datetime] = dt.datetime.now,
 ) -> int:
     path = Path(job_path).resolve()
-    data, run_at, workspace, argv, transition = _load_job(path)
+    data = _read_job_object(path)
+    try:
+        _, run_at, workspace, argv, transition = _validate_job(data)
+    except ValueError as error:
+        return _persist_pre_execution_failure(path, data, error, clock)
     delay = (run_at - clock()).total_seconds()
     if wait and delay > 0:
         sleeper(delay)

@@ -11,6 +11,7 @@ from pathlib import Path
 import pytest
 
 import rate_limit_handoff.scheduler as scheduler_module
+from rate_limit_handoff.continuity import ACTIVE_END, ACTIVE_START
 from rate_limit_handoff.models import MODELS, resolve_model
 from rate_limit_handoff.scheduler import LimitScheduler
 
@@ -356,6 +357,52 @@ def test_malformed_explicit_return_time_raises_without_workspace_mutation(tmp_pa
         )
 
     assert not workspace.exists()
+
+
+def test_offset_reset_time_raises_without_workspace_mutation(tmp_path):
+    workspace = tmp_path / "offset-reset"
+    sched = LimitScheduler(workspace=workspace)
+
+    with pytest.raises(ValueError, match="UTC offset"):
+        sched.schedule(
+            summary="Wait",
+            reset_at="2099-07-13T16:00:00+00:00",
+            model="claude",
+        )
+
+    assert not workspace.exists()
+
+
+def test_offset_return_time_raises_without_workspace_mutation(tmp_path):
+    workspace = tmp_path / "offset-return"
+    sched = LimitScheduler(workspace=workspace)
+
+    with pytest.raises(ValueError, match="UTC offset"):
+        sched.handoff(
+            summary="Continue and return",
+            from_model="claude",
+            to_model="codex",
+            return_to="claude",
+            return_at="2099-07-13T16:00:00-05:00",
+        )
+
+    assert not workspace.exists()
+
+
+def test_schedule_and_update_escape_marker_fields_in_handoff(monkeypatch, tmp_path):
+    marker_text = f"line one\r{ACTIVE_START}\nline two\r\n{ACTIVE_END}\nline three"
+    model = f"provider/{marker_text}"
+    sched = LimitScheduler(workspace=tmp_path)
+    monkeypatch.setattr(sched, "try_schedule_system_job", lambda *args: None)
+
+    assert sched.schedule(summary=marker_text, reset_at="2099-07-13 16:00", model=model) == 0
+    sched.update_only(summary=marker_text, reset_at="2099-07-13 17:00", model=model)
+
+    content = (tmp_path / "handoff.md").read_text(encoding="utf-8")
+    assert content.count(ACTIVE_START) == 1
+    assert content.count(ACTIVE_END) == 1
+    assert "&lt;!-- rlh:active-chain:start --&gt;" in content
+    assert "&lt;!-- rlh:active-chain:end --&gt;" in content
 
 
 def test_schedule_normalizes_model_before_state_job_and_notes(monkeypatch, tmp_path):

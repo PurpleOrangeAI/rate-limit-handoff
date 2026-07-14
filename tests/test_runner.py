@@ -63,6 +63,24 @@ def test_create_job_is_private_and_pending(tmp_path):
     assert path.stat().st_mode & 0o077 == 0
 
 
+def test_create_job_rejects_aware_run_at_before_writing(tmp_path):
+    logs_path = tmp_path / "second_brain" / "logs"
+
+    with pytest.raises(ValueError, match="UTC offset"):
+        create_job(
+            logs_path=logs_path,
+            workspace=tmp_path,
+            mode="same",
+            model="claude",
+            run_at=NOW.replace(tzinfo=dt.timezone.utc),
+            argv=["claude", "-p", "Continue"],
+            transition=None,
+            now=lambda: NOW,
+        )
+
+    assert not logs_path.exists()
+
+
 def test_execute_job_uses_no_shell_and_records_success(tmp_path):
     calls: list[tuple[list[str], dict[str, Any]]] = []
 
@@ -232,6 +250,38 @@ def test_execute_job_waits_exact_positive_delay_then_executes(tmp_path):
     assert result == 0
     assert sleeps == [45.0]
     assert calls == [["python", "-c", "print('ok')"]]
+
+
+def test_execute_job_persists_aware_run_at_validation_failure(tmp_path):
+    calls: list[list[str]] = []
+
+    def fake_run(argv: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0)
+
+    path = create_job(
+        logs_path=tmp_path / "second_brain" / "logs",
+        workspace=tmp_path,
+        mode="same",
+        model="python",
+        run_at=NOW,
+        argv=["python", "-c", "print('ok')"],
+        transition=None,
+        now=lambda: NOW,
+    )
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["run_at"] = NOW.replace(tzinfo=dt.timezone.utc).isoformat()
+    path.write_text(json.dumps(data), encoding="utf-8")
+
+    result = execute_job(path, wait=False, run=fake_run, clock=lambda: NOW)
+
+    assert result != 0
+    assert calls == []
+    failed = json.loads(path.read_text(encoding="utf-8"))
+    assert failed["status"] == "failed"
+    assert failed["exit_code"] == result
+    assert "UTC offset" in failed["error"]
+    assert failed["finished_at"] == NOW.isoformat()
 
 
 def test_spawn_waiting_job_uses_module_runner_and_new_session(tmp_path):

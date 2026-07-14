@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import datetime as dt
+import html
 import json
 import os
+import re
 import stat
 import tempfile
 from collections.abc import Callable
@@ -13,6 +15,12 @@ from pathlib import Path
 
 ACTIVE_START = "<!-- rlh:active-chain:start -->"
 ACTIVE_END = "<!-- rlh:active-chain:end -->"
+
+
+def render_handoff_scalar(value: str) -> str:
+    """Render persisted text safely as one line inside handoff Markdown."""
+    single_line = re.sub(r"[\r\n]+", " ", value)
+    return html.escape(single_line, quote=False)
 
 
 @dataclass(frozen=True)
@@ -145,8 +153,16 @@ class ContinuityStore:
             else 0o600
         )
         block = self._render_active_chain(state)
+        self._validate_rendered_active_chain(block)
         content_without_blocks = self._remove_active_chain_blocks(content)
         return content_without_blocks.rstrip() + "\n\n" + block + "\n", mode
+
+    @staticmethod
+    def _validate_rendered_active_chain(block: str) -> None:
+        if block.count(ACTIVE_START) != 1 or block.count(ACTIVE_END) != 1:
+            raise ValueError("rendered active chain must contain exactly one marker pair")
+        if block.index(ACTIVE_START) >= block.index(ACTIVE_END):
+            raise ValueError("rendered active chain markers must be ordered start before end")
 
     def _remove_active_chain_blocks(self, content: str) -> str:
         start_count = content.count(ACTIVE_START)
@@ -223,20 +239,22 @@ class ContinuityStore:
         lines = [
             ACTIVE_START,
             "## Active Handoff Chain",
-            f"- Mode: {state.mode}",
-            f"- Source model: {state.source_model}",
-            f"- Current model: {state.current_model}",
-            f"- Status: {state.status}",
-            f"- Summary: {state.summary}",
+            f"- Mode: {render_handoff_scalar(state.mode)}",
+            f"- Source model: {render_handoff_scalar(state.source_model)}",
+            f"- Current model: {render_handoff_scalar(state.current_model)}",
+            f"- Status: {render_handoff_scalar(state.status)}",
+            f"- Summary: {render_handoff_scalar(state.summary)}",
         ]
         if state.reset_at:
             lines.append(f"- Reset at: {state.reset_at.isoformat(timespec='minutes')}")
         if state.return_to:
-            lines.append(f"- Return to: {state.return_to}")
+            lines.append(f"- Return to: {render_handoff_scalar(state.return_to)}")
         if state.return_at:
             lines.append(f"- Return at: {state.return_at.isoformat(timespec='minutes')}")
         if state.preferred_model:
-            lines.append(f"- Preferred resume model: {state.preferred_model}")
+            lines.append(
+                f"- Preferred resume model: {render_handoff_scalar(state.preferred_model)}"
+            )
         lines.extend(
             [
                 f"- Updated: {state.updated_at.isoformat(timespec='minutes')}",

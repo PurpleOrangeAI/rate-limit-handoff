@@ -13,7 +13,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from .continuity import ContinuityStore, HandoffState
+from .continuity import ContinuityStore, HandoffState, render_handoff_scalar
 from .models import MODELS, resolve_model
 from .runner import create_job, execute_job, spawn_waiting_job
 
@@ -83,7 +83,10 @@ class LimitScheduler:
             if target <= n:
                 target += dt.timedelta(days=1)
             return target
-        return dt.datetime.fromisoformat(at_str)
+        target = dt.datetime.fromisoformat(at_str)
+        if target.tzinfo is not None and target.utcoffset() is not None:
+            raise ValueError("scheduled time must use local time without a UTC offset")
+        return target
 
     def ensure_dirs(self) -> None:
         for d in (self.inbox, self.projects, self.logs, self.handoff_path.parent, self.skills):
@@ -150,13 +153,15 @@ class LimitScheduler:
             if scheduled
             else 'Or paste into AI: "Continue from the latest Handoff Update in handoff.md."'
         )
+        rendered_model = render_handoff_scalar(model)
+        rendered_summary = render_handoff_scalar(summary)
 
         block = textwrap.dedent(f"""
         ---
-        ## {block_title} ({ts}) — model: {model}
+        ## {block_title} ({ts}) — model: {rendered_model}
         **{reset_label}:** {reset_str}
         **Summary of remaining work:**
-        {summary}
+        {rendered_summary}
 
         **{action_heading}:**
         1. Open this handoff.md
@@ -172,9 +177,9 @@ class LimitScheduler:
         if self.handoff_path.exists():
             content = self.handoff_path.read_text(encoding="utf-8")
             status = (
-                f"SCHEDULED for {reset_str} ({model}) – resume after reset."
+                f"SCHEDULED for {reset_str} ({rendered_model}) – resume after reset."
                 if scheduled
-                else f"ACTIVE – checkpoint updated {ts} ({model})."
+                else f"ACTIVE – checkpoint updated {ts} ({rendered_model})."
             )
             content = re.sub(
                 r"\*\*Status:\*\*.*",
