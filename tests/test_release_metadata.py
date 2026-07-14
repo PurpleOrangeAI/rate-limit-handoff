@@ -1,8 +1,7 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
-
-import tomllib
 
 from rate_limit_handoff import __version__
 from rate_limit_handoff.cli import (
@@ -17,8 +16,11 @@ ROOT = Path(__file__).parents[1]
 
 
 def test_runtime_and_project_versions_match_v021():
-    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
-    assert project["project"]["version"] == "0.2.1"
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    project_version = re.search(r'^version = "([^"]+)"$', pyproject, re.MULTILINE)
+
+    assert project_version is not None
+    assert project_version.group(1) == "0.2.1"
     assert __version__ == "0.2.1"
 
 
